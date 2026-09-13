@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>netmon — network monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0F1417; --panel:#161D22; --panel-2:#1B2329; --border:#232B31;
+    --text:#E5EAED; --muted:#7C8B94; --muted-2:#54626A;
+    --up:#3ECF8E; --warn:#E8A33D; --crit:#E5484D; --info:#5B9BD5;
+    --up-dim:#1B3A2E; --warn-dim:#3D2E14; --crit-dim:#3B1A1D; --info-dim:#182B3A;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:14px;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  a{color:inherit;}
+  ::selection{background:#2A3B44;}
+
+  #app{display:grid;grid-template-columns:220px 1fr;height:100vh;}
+
+  /* ---------- sidebar ---------- */
+  #sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 14px;}
+  .brand{display:flex;align-items:center;gap:8px;margin-bottom:22px;padding:0 4px;}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--up);box-shadow:0 0 8px var(--up);}
+  .brand .name{font-weight:600;font-size:15px;letter-spacing:0.2px;}
+  .brand .name span{color:var(--muted);font-weight:400;}
+
+  .nav-section{margin-bottom:20px;}
+  .nav-label{color:var(--muted-2);font-size:11px;font-weight:500;margin:0 0 8px 6px;}
+  .nav-item{display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:5px;cursor:pointer;color:var(--muted);margin-bottom:1px;font-size:13.5px;}
+  .nav-item:hover{background:var(--panel-2);color:var(--text);}
+  .nav-item.active{background:var(--panel-2);color:var(--text);}
+  .nav-item .count{font-family:'IBM Plex Mono',monospace;color:var(--muted-2);font-size:12px;}
+  .nav-item.active .count{color:var(--muted);}
+
+  .prio-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:8px;}
+  .prio-critical{background:var(--crit);} .prio-high{background:var(--warn);}
+  .prio-normal{background:var(--info);} .prio-low{background:var(--muted-2);}
+
+  #add-group-row{display:flex;gap:6px;margin-top:4px;padding:0 6px;}
+  #add-group-row input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:5px 7px;font-size:12.5px;}
+  #add-group-row button{background:var(--panel-2);border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:5px 8px;cursor:pointer;font-size:13px;}
+  #add-group-row button:hover{color:var(--text);}
+
+  .sidebar-footer{margin-top:auto;padding:10px 6px 0;border-top:1px solid var(--border);display:flex;align-items:center;gap:7px;color:var(--muted-2);font-size:12px;}
+  .ws-dot{width:7px;height:7px;border-radius:50%;background:var(--muted-2);}
+  .ws-dot.live{background:var(--up);box-shadow:0 0 6px var(--up);}
+  .ws-dot.down{background:var(--crit);}
+
+  /* ---------- main ---------- */
+  #main{display:flex;flex-direction:column;min-width:0;}
+  #topbar{display:flex;align-items:center;gap:12px;padding:14px 22px;border-bottom:1px solid var(--border);}
+  #topbar h1{font-size:16px;font-weight:600;margin:0;flex-shrink:0;}
+  #search{flex:1;max-width:320px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 11px;font-size:13px;}
+  #search::placeholder{color:var(--muted-2);}
+  .btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 13px;font-size:13px;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:6px;}
+  .btn:hover{background:var(--panel-2);}
+  .btn-primary{background:var(--info);border-color:var(--info);color:#08131C;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;border-color:transparent;color:var(--muted);}
+  .btn-ghost:hover{background:var(--panel-2);color:var(--text);}
+  .icon-btn{position:relative;}
+  .badge{position:absolute;top:-5px;right:-5px;background:var(--crit);color:white;font-size:10px;font-weight:600;border-radius:8px;padding:1px 5px;line-height:1.3;}
+
+  #content{flex:1;overflow:auto;padding:18px 22px;}
+
+  table{width:100%;border-collapse:collapse;}
+  thead th{text-align:left;color:var(--muted-2);font-weight:500;font-size:11.5px;padding:0 12px 8px;border-bottom:1px solid var(--border);}
+  tbody tr{cursor:pointer;transition:background .12s;}
+  tbody tr:hover{background:var(--panel);}
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+
+  .status-cell{display:flex;align-items:center;gap:9px;}
+  .status-pill{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .status-pill.up{background:var(--up);box-shadow:0 0 6px var(--up);}
+  .status-pill.down{background:var(--crit);box-shadow:0 0 6px var(--crit);}
+  .status-pill.unknown{background:var(--muted-2);}
+
+  .device-name{font-weight:500;}
+  .device-ip{color:var(--muted);font-size:12.5px;}
+
+  .prio-tag{display:inline-flex;align-items:center;font-size:11.5px;color:var(--muted);}
+  .metric{font-size:13px;}
+  .metric.warn{color:var(--warn);} .metric.crit{color:var(--crit);}
+  .metric-sub{color:var(--muted-2);font-size:11px;}
+
+  .row-actions{display:flex;gap:4px;opacity:0;}
+  tr:hover .row-actions{opacity:1;}
+  .icon-sm{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:13px;}
+  .icon-sm:hover{background:var(--panel-2);color:var(--text);}
+
+  .empty-state{text-align:center;padding:70px 20px;color:var(--muted);}
+  .empty-state h3{color:var(--text);margin-bottom:6px;font-weight:600;}
+
+  /* ---------- modal / drawer ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(6,9,11,0.6);display:none;align-items:center;justify-content:center;z-index:50;}
+  .overlay.open{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;width:420px;max-width:92vw;padding:22px;}
+  .modal h2{margin:0 0 16px;font-size:16px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .field input, .field select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;}
+  .field-row{display:flex;gap:10px;}
+  .field-row .field{flex:1;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:92vw;background:var(--panel);border-left:1px solid var(--border);
+    transform:translateX(100%);transition:transform .18s ease;z-index:40;display:flex;flex-direction:column;}
+  .drawer.open{transform:translateX(0);}
+  .drawer-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+  .drawer-header h2{font-size:15px;margin:0;}
+  .drawer-body{flex:1;overflow:auto;padding:16px 20px;}
+  .alert-item{border-bottom:1px solid var(--border);padding:11px 0;}
+  .alert-item:last-child{border-bottom:none;}
+  .alert-item .msg{font-size:13px;margin-bottom:3px;}
+  .alert-item .meta{font-size:11.5px;color:var(--muted-2);display:flex;gap:8px;align-items:center;}
+  .tag-down{color:var(--crit);} .tag-recovered{color:var(--up);} .tag-high_loss{color:var(--warn);} .tag-high_latency{color:var(--warn);}
+  .resolved-tag{color:var(--muted-2);font-size:10.5px;border:1px solid var(--border);border-radius:3px;padding:0 4px;}
+
+  #detail-drawer .drawer-body{padding:0;}
+  .detail-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);margin-bottom:1px;}
+  .detail-stat{background:var(--panel);padding:14px 18px;}
+  .detail-stat .label{font-size:11px;color:var(--muted-2);margin-bottom:4px;}
+  .detail-stat .val{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:600;}
+  .range-tabs{display:flex;gap:4px;padding:14px 18px 0;}
+  .range-tab{background:var(--bg);border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:5px 10px;font-size:12px;cursor:pointer;}
+  .range-tab.active{color:var(--text);border-color:var(--info);}
+  .chart-wrap{padding:14px 18px;}
+  .chart-wrap h4{font-size:12px;color:var(--muted);margin:0 0 8px;font-weight:500;}
+  .device-settings{padding:0 18px 18px;border-top:1px solid var(--border);margin-top:8px;padding-top:14px;}
+
+  .toast-stack{position:fixed;bottom:18px;right:18px;z-index:60;display:flex;flex-direction:column;gap:8px;}
+  .toast{background:var(--panel-2);border:1px solid var(--border);border-left:3px solid var(--info);padding:10px 14px;border-radius:6px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.3);}
+  .toast.crit{border-left-color:var(--crit);}
+  .toast.up{border-left-color:var(--up);}
+
+  @media (max-width: 760px){
+    #app{grid-template-columns:1fr;}
+    #sidebar{display:none;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="brand"><div class="dot"></div><div class="name">TSS Netmon <span>v0.1</span></div></div>
+
+    <div class="nav-section">
+      <div class="nav-label">VIEW</div>
+      <div class="nav-item active" data-filter-group="all">All devices <span class="count" id="count-all">0</span></div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">GROUPS</div>
+      <div id="group-list"></div>
+      <div id="add-group-row">
+        <input id="new-group-name" placeholder="New group…" maxlength="40">
+        <button id="add-group-btn">+</button>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">PRIORITY</div>
+      <div class="nav-item" data-filter-priority="critical"><span><span class="prio-dot prio-critical"></span>Critical</span><span class="count" id="count-critical">0</span></div>
+      <div class="nav-item" data-filter-priority="high"><span><span class="prio-dot prio-high"></span>High</span><span class="count" id="count-high">0</span></div>
+      <div class="nav-item" data-filter-priority="normal"><span><span class="prio-dot prio-normal"></span>Normal</span><span class="count" id="count-normal">0</span></div>
+      <div class="nav-item" data-filter-priority="low"><span><span class="prio-dot prio-low"></span>Low</span><span class="count" id="count-low">0</span></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="ws-dot" id="ws-dot"></div>
+      <span id="ws-label">connecting…</span>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="topbar">
+      <h1>Devices</h1>
+      <input id="search" placeholder="Filter by name or IP…">
+      <button class="btn icon-btn btn-ghost" id="open-alerts">Alerts<span class="badge" id="alert-badge" style="display:none">0</span></button>
+      <button class="btn btn-ghost" id="open-settings">Settings</button>
+      <button class="btn btn-primary" id="open-add-device">+ Add device</button>
+    </div>
+    <div id="content">
+      <table id="device-table" style="display:none">
+        <thead>
+          <tr>
+            <th style="width:26px"></th>
+            <th>Name</th>
+            <th>Group</th>
+            <th>Priority</th>
+            <th>Latency</th>
+            <th>Jitter</th>
+            <th>Loss</th>
+            <th>Trend</th>
+            <th style="width:70px"></th>
+          </tr>
+        </thead>
+        <tbody id="device-tbody"></tbody>
+      </table>
+      <div class="empty-state" id="empty-state">
+        <h3>No devices yet</h3>
+        <div>Add an IP address or hostname to start monitoring it.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit device modal -->
+<div class="overlay" id="device-overlay">
+  <div class="modal">
+    <h2 id="device-modal-title">Add device</h2>
+    <input type="hidden" id="device-id">
+    <div class="field"><label>Name</label><input id="f-name" placeholder="Core switch — rack 3"></div>
+    <div class="field"><label>IP address / hostname</label><input id="f-ip" class="mono" placeholder="10.0.1.1"></div>
+    <div class="field-row">
+      <div class="field"><label>Group</label><select id="f-group"><option value="">Ungrouped</option></select></div>
+      <div class="field"><label>Priority</label>
+        <select id="f-priority">
+          <option value="critical">Critical — every 5s</option>
+          <option value="high">High — every 15s</option>
+          <option value="normal" selected>Normal — every 60s</option>
+          <option value="low">Low — every 5m</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Alert latency above (ms)</label><input id="f-latency-threshold" type="number" value="200"></div>
+      <div class="field"><label>Alert loss above (%)</label><input id="f-loss-threshold" type="number" value="20"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="device-cancel">Cancel</button>
+      <button class="btn btn-primary" id="device-save">Save device</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h2>Settings</h2>
+    <div class="field">
+      <label>Alert webhook URL (Slack, Discord, or any endpoint accepting JSON POST)</label>
+      <input id="f-webhook" placeholder="https://hooks.slack.com/services/…">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="settings-cancel">Close</button>
+      <button class="btn btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Alerts drawer -->
+<div class="drawer" id="alerts-drawer">
+  <div class="drawer-header"><h2>Alerts</h2><button class="icon-sm" id="close-alerts">✕</button></div>
+  <div class="drawer-body" id="alerts-body"></div>
+</div>
+
+<!-- Device detail drawer -->
+<div class="drawer" id="detail-drawer">
+  <div class="drawer-header"><h2 id="detail-title">Device</h2><button class="icon-sm" id="close-detail">✕</button></div>
+  <div class="drawer-body">
+    <div class="detail-stats">
+      <div class="detail-stat"><div class="label">LATENCY</div><div class="val" id="detail-latency">—</div></div>
+      <div class="detail-stat"><div class="label">JITTER</div><div class="val" id="detail-jitter">—</div></div>
+      <div class="detail-stat"><div class="label">PACKET LOSS</div><div class="val" id="detail-loss">—</div></div>
+    </div>
+    <div class="range-tabs">
+      <div class="range-tab" data-hours="1">1h</div>
+      <div class="range-tab active" data-hours="24">24h</div>
+      <div class="range-tab" data-hours="168">7d</div>
+      <div class="range-tab" data-hours="720">30d</div>
+    </div>
+    <div class="chart-wrap"><h4>Latency &amp; jitter over time</h4><canvas id="chart-latency" height="140"></canvas></div>
+    <div class="chart-wrap"><h4>Packet loss over time</h4><canvas id="chart-loss" height="100"></canvas></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script>
+const state = { devices: {}, groups: [], filterGroup: 'all', filterPriority: null, search: '', currentDetailId: null, latencyChart: null, lossChart: null };
+
+async function api(path, opts={}) {
+  const res = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
+  if (!res.ok) { const t = await res.text(); throw new Error(t || res.statusText); }
+  return res.status === 204 ? null : res.json();
+}
+
+// ---------------- rendering ----------------
+
+function fmtMs(v){ return (v===null||v===undefined) ? '—' : `${v.toFixed(v<10?1:0)} ms`; }
+function fmtPct(v){ return (v===null||v===undefined) ? '—' : `${v.toFixed(1)}%`; }
+
+function sparklineSVG(values){
+  const clean = (values||[]).map(v => v===null||v===undefined ? null : v);
+  const nums = clean.filter(v => v!==null);
+  if (nums.length < 2) return '<svg width="90" height="26"></svg>';
+  const max = Math.max(...nums), min = Math.min(...nums);
+  const range = (max-min) || 1;
+  const w = 90, h = 26, step = w/(clean.length-1);
+  let points = [];
+  clean.forEach((v,i) => {
+    if (v===null) return;
+    const x = i*step;
+    const y = h - ((v-min)/range)*h*0.8 - h*0.1;
+    points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  });
+  const last = nums[nums.length-1];
+  const lastHigh = last === max;
+  return `<svg width="${w}" height="${h}"><polyline fill="none" stroke="${lastHigh?'var(--warn)':'var(--info)'}" stroke-width="1.5" points="${points.join(' ')}"/></svg>`;
+}
+
+function deviceRow(d){
+  const live = d.live || {};
+  const status = live.status || 'unknown';
+  const group = state.groups.find(g => g.id === d.group_id);
+  const latClass = live.latency_ms >= d.latency_threshold_ms ? 'warn' : '';
+  const lossClass = live.loss_pct >= d.loss_threshold_pct ? 'warn' : '';
+  return `
+  <tr data-id="${d.id}">
+    <td><div class="status-cell"><div class="status-pill ${status}"></div></div></td>
+    <td>
+      <div class="device-name">${escapeHtml(d.name)}</div>
+      <div class="device-ip mono">${escapeHtml(d.ip_address)}</div>
+    </td>
+    <td>${group ? escapeHtml(group.name) : '<span style="color:var(--muted-2)">—</span>'}</td>
+    <td><span class="prio-tag"><span class="prio-dot prio-${d.priority}"></span>${d.priority}</span></td>
+    <td class="mono metric ${latClass}">${fmtMs(live.latency_ms)}</td>
+    <td class="mono metric">${live.jitter_ms!==undefined ? live.jitter_ms.toFixed(1)+' ms' : '—'}</td>
+    <td class="mono metric ${lossClass}">${fmtPct(live.loss_pct)}</td>
+    <td>${sparklineSVG(live.sparkline)}</td>
+    <td>
+      <div class="row-actions">
+        <button class="icon-sm" data-edit="${d.id}" title="Edit">✎</button>
+        <button class="icon-sm" data-delete="${d.id}" title="Delete">🗑</button>
+      </div>
+    </td>
+  </tr>`;
+}
+
+function escapeHtml(s){ return (s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderGroupList(){
+  const el = document.getElementById('group-list');
+  el.innerHTML = state.groups.map(g => {
+    const count = Object.values(state.devices).filter(d => d.group_id === g.id).length;
+    return `<div class="nav-item" data-filter-group="${g.id}">${escapeHtml(g.name)} <span class="count">${count}</span></div>`;
+  }).join('');
+  document.getElementById('f-group').innerHTML = '<option value="">Ungrouped</option>' +
+    state.groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+}
+
+function renderTable(){
+  let list = Object.values(state.devices);
+  if (state.filterGroup !== 'all') list = list.filter(d => String(d.group_id) === String(state.filterGroup));
+  if (state.filterPriority) list = list.filter(d => d.priority === state.filterPriority);
+  if (state.search) {
+    const q = state.search.toLowerCase();
+    list = list.filter(d => d.name.toLowerCase().includes(q) || d.ip_address.toLowerCase().includes(q));
+  }
+  list.sort((a,b) => a.name.localeCompare(b.name));
+
+  document.getElementById('device-table').style.display = list.length ? '' : 'none';
+  document.getElementById('empty-state').style.display = list.length ? 'none' : '';
+  document.getElementById('device-tbody').innerHTML = list.map(deviceRow).join('');
+
+  const all = Object.values(state.devices);
+  document.getElementById('count-all').textContent = all.length;
+  ['critical','high','normal','low'].forEach(p => {
+    document.getElementById('count-'+p).textContent = all.filter(d => d.priority===p).length;
+  });
+  renderGroupList();
+}
+
+function updateNavActive(){
+  document.querySelectorAll('[data-filter-group]').forEach(el => {
+    el.classList.toggle('active', el.dataset.filterGroup === String(state.filterGroup) && !state.filterPriority);
+  });
+  document.querySelectorAll('[data-filter-priority]').forEach(el => {
+    el.classList.toggle('active', el.dataset.filterPriority === state.filterPriority);
+  });
+}
+
+// ---------------- data loading ----------------
+
+async function loadAll(){
+  state.groups = await api('/api/groups');
+  const devices = await api('/api/devices');
+  state.devices = {};
+  devices.forEach(d => state.devices[d.id] = d);
+  renderTable();
+  refreshAlertBadge();
+}
+
+function applyLiveUpdate(stats){
+  const d = state.devices[stats.device_id];
+  if (!d) return;
+  d.live = stats;
+  renderTable();
+  if (state.currentDetailId === stats.device_id) renderDetailStats(stats);
+}
+
+// ---------------- websocket ----------------
+
+let ws, wsRetryMs = 1000;
+function connectWS(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => { setWsStatus(true); wsRetryMs = 1000; };
+  ws.onclose = () => { setWsStatus(false); setTimeout(connectWS, wsRetryMs); wsRetryMs = Math.min(wsRetryMs*2, 15000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.kind === 'snapshot') { msg.stats.forEach(applyLiveUpdate); }
+    else if (msg.kind === 'update') { applyLiveUpdate(msg.stats); }
+    else if (msg.kind === 'alert') { onNewAlert(msg.alert); }
+  };
+}
+function setWsStatus(live){
+  document.getElementById('ws-dot').className = 'ws-dot ' + (live ? 'live' : 'down');
+  document.getElementById('ws-label').textContent = live ? 'live' : 'reconnecting…';
+}
+
+function onNewAlert(alert){
+  refreshAlertBadge();
+  const t = document.createElement('div');
+  const cls = alert.type === 'down' ? 'crit' : (alert.type === 'recovered' ? 'up' : '');
+  t.className = 'toast ' + cls;
+  t.textContent = alert.message;
+  document.getElementById('toast-stack').appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+  if (document.getElementById('alerts-drawer').classList.contains('open')) loadAlerts();
+}
+
+async function refreshAlertBadge(){
+  const unresolved = await api('/api/alerts?unresolved_only=true');
+  const badge = document.getElementById('alert-badge');
+  if (unresolved.length) { badge.style.display=''; badge.textContent = unresolved.length; }
+  else badge.style.display = 'none';
+}
+
+// ---------------- device modal ----------------
+
+const deviceOverlay = document.getElementById('device-overlay');
+document.getElementById('open-add-device').onclick = () => openDeviceModal(null);
+document.getElementById('device-cancel').onclick = () => deviceOverlay.classList.remove('open');
+
+function openDeviceModal(device){
+  document.getElementById('device-modal-title').textContent = device ? 'Edit device' : 'Add device';
+  document.getElementById('device-id').value = device ? device.id : '';
+  document.getElementById('f-name').value = device ? device.name : '';
+  document.getElementById('f-ip').value = device ? device.ip_address : '';
+  document.getElementById('f-group').value = device && device.group_id ? device.group_id : '';
+  document.getElementById('f-priority').value = device ? device.priority : 'normal';
+  document.getElementById('f-latency-threshold').value = device ? device.latency_threshold_ms : 200;
+  document.getElementById('f-loss-threshold').value = device ? device.loss_threshold_pct : 20;
+  deviceOverlay.classList.add('open');
+}
+
+document.getElementById('device-save').onclick = async () => {
+  const id = document.getElementById('device-id').value;
+  const payload = {
+    name: document.getElementById('f-name').value.trim(),
+    ip_address: document.getElementById('f-ip').value.trim(),
+    group_id: document.getElementById('f-group').value ? Number(document.getElementById('f-group').value) : null,
+    priority: document.getElementById('f-priority').value,
+    latency_threshold_ms: Number(document.getElementById('f-latency-threshold').value),
+    loss_threshold_pct: Number(document.getElementById('f-loss-threshold').value),
+  };
+  if (!payload.name || !payload.ip_address) return alert('Name and IP address are required.');
+  try {
+    const saved = id ? await api(`/api/devices/${id}`, {method:'PATCH', body:JSON.stringify(payload)})
+                      : await api('/api/devices', {method:'POST', body:JSON.stringify({...payload, enabled:true})});
+    state.devices[saved.id] = {...saved, live: state.devices[saved.id]?.live};
+    renderTable();
+    deviceOverlay.classList.remove('open');
+  } catch(e){ alert('Could not save device: ' + e.message); }
+};
+
+document.getElementById('device-tbody').addEventListener('click', (e) => {
+  const editId = e.target.dataset.edit, delId = e.target.dataset.delete;
+  if (editId) { e.stopPropagation(); openDeviceModal(state.devices[editId]); return; }
+  if (delId) { e.stopPropagation(); deleteDevice(delId); return; }
+  const row = e.target.closest('tr');
+  if (row) openDetail(Number(row.dataset.id));
+});
+
+async function deleteDevice(id){
+  if (!confirm('Remove this device and its history?')) return;
+  await api(`/api/devices/${id}`, {method:'DELETE'});
+  delete state.devices[id];
+  renderTable();
+}
+
+// ---------------- groups ----------------
+
+document.getElementById('add-group-btn').onclick = async () => {
+  const input = document.getElementById('new-group-name');
+  if (!input.value.trim()) return;
+  try {
+    await api('/api/groups', {method:'POST', body: JSON.stringify({name: input.value.trim()})});
+    input.value = '';
+    state.groups = await api('/api/groups');
+    renderTable();
+  } catch(e){ alert(e.message); }
+};
+
+document.getElementById('sidebar').addEventListener('click', (e) => {
+  const groupEl = e.target.closest('[data-filter-group]');
+  const prioEl = e.target.closest('[data-filter-priority]');
+  if (groupEl) { state.filterGroup = groupEl.dataset.filterGroup; state.filterPriority = null; }
+  if (prioEl) { state.filterPriority = state.filterPriority === prioEl.dataset.filterPriority ? null : prioEl.dataset.filterPriority; state.filterGroup = 'all'; }
+  updateNavActive();
+  renderTable();
+});
+
+document.getElementById('search').addEventListener('input', (e) => { state.search = e.target.value; renderTable(); });
+
+// ---------------- alerts drawer ----------------
+
+const alertsDrawer = document.getElementById('alerts-drawer');
+document.getElementById('open-alerts').onclick = () => { alertsDrawer.classList.add('open'); loadAlerts(); };
+document.getElementById('close-alerts').onclick = () => alertsDrawer.classList.remove('open');
+
+async function loadAlerts(){
+  const alerts = await api('/api/alerts');
+  const body = document.getElementById('alerts-body');
+  if (!alerts.length) { body.innerHTML = '<div class="empty-state"><h3>No alerts yet</h3><div>You\\'ll see device outages and threshold breaches here.</div></div>'; return; }
+  body.innerHTML = alerts.map(a => `
+    <div class="alert-item">
+      <div class="msg tag-${a.type}">${escapeHtml(a.message)}</div>
+      <div class="meta"><span class="mono">${a.created_at}</span>${a.resolved ? '<span class="resolved-tag">RESOLVED</span>' : ''}</div>
+    </div>`).join('');
+}
+
+// ---------------- settings ----------------
+
+const settingsOverlay = document.getElementById('settings-overlay');
+document.getElementById('open-settings').onclick = async () => {
+  const {value} = await api('/api/settings/webhook_url');
+  document.getElementById('f-webhook').value = value || '';
+  settingsOverlay.classList.add('open');
+};
+document.getElementById('settings-cancel').onclick = () => settingsOverlay.classList.remove('open');
+document.getElementById('settings-save').onclick = async () => {
+  await api('/api/settings/webhook_url', {method:'PUT', body: JSON.stringify({value: document.getElementById('f-webhook').value.trim()})});
+  settingsOverlay.classList.remove('open');
+};
+
+[deviceOverlay, settingsOverlay].forEach(ov => ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.remove('open'); }));
+
+// ---------------- device detail drawer ----------------
+
+const detailDrawer = document.getElementById('detail-drawer');
+document.getElementById('close-detail').onclick = () => { detailDrawer.classList.remove('open'); state.currentDetailId = null; };
+
+async function openDetail(id){
+  state.currentDetailId = id;
+  const d = state.devices[id];
+  document.getElementById('detail-title').textContent = `${d.name} — ${d.ip_address}`;
+  detailDrawer.classList.add('open');
+  renderDetailStats(d.live || {});
+  await loadHistory(id, 24);
+}
+
+function renderDetailStats(live){
+  document.getElementById('detail-latency').textContent = fmtMs(live.latency_ms);
+  document.getElementById('detail-jitter').textContent = live.jitter_ms!==undefined ? live.jitter_ms.toFixed(1)+' ms' : '—';
+  document.getElementById('detail-loss').textContent = fmtPct(live.loss_pct);
+}
+
+document.querySelectorAll('.range-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.range-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    loadHistory(state.currentDetailId, Number(tab.dataset.hours));
+  };
+});
+
+async function loadHistory(id, hours){
+  const rows = await api(`/api/devices/${id}/history?hours=${hours}`);
+  const labels = rows.map(r => r.ts);
+  const latencies = rows.map(r => r.latency_ms);
+  const loss = rows.map(r => r.loss_pct !== undefined ? r.loss_pct : (r.success ? 0 : 100));
+
+  const jitters = [];
+  let prev = null;
+  latencies.forEach(l => {
+    if (l===null || prev===null) { jitters.push(null); }
+    else jitters.push(Math.abs(l-prev));
+    if (l!==null) prev = l;
+  });
+
+  const ctxL = document.getElementById('chart-latency').getContext('2d');
+  if (state.latencyChart) state.latencyChart.destroy();
+  state.latencyChart = new Chart(ctxL, {
+    type: 'line',
+    data: { labels, datasets: [
+      { label:'Latency (ms)', data: latencies, borderColor:'#5B9BD5', backgroundColor:'transparent', pointRadius:0, tension:0.25, spanGaps:true },
+      { label:'Jitter (ms)', data: jitters, borderColor:'#E8A33D', backgroundColor:'transparent', pointRadius:0, tension:0.25, spanGaps:true },
+    ]},
+    options: chartOptions()
+  });
+
+  const ctxLoss = document.getElementById('chart-loss').getContext('2d');
+  if (state.lossChart) state.lossChart.destroy();
+  state.lossChart = new Chart(ctxLoss, {
+    type: 'bar',
+    data: { labels, datasets: [{ label:'Loss %', data: loss, backgroundColor:'#E5484D' }] },
+    options: {...chartOptions(), scales:{...chartOptions().scales, y:{...chartOptions().scales.y, max:100}}}
+  });
+}
+
+function chartOptions(){
+  return {
+    responsive: true,
+    animation: false,
+    interaction: { mode:'index', intersect:false },
+    plugins: { legend: { labels: { color:'#7C8B94', boxWidth:10, font:{size:11} } } },
+    scales: {
+      x: { ticks:{color:'#54626A', maxTicksLimit:6, font:{size:10}}, grid:{color:'#232B31'} },
+      y: { ticks:{color:'#54626A', font:{size:10}}, grid:{color:'#232B31'}, beginAtZero:true }
+    }
+  };
+}
+
+// ---------------- boot ----------------
+
+loadAll();
+connectWS();
+setInterval(refreshAlertBadge, 30000);
+</script>
+</body>
+</html>
