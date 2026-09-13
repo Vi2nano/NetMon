@@ -530,7 +530,7 @@ document.getElementById('close-alerts').onclick = () => alertsDrawer.classList.r
 async function loadAlerts(){
   const alerts = await api('/api/alerts');
   const body = document.getElementById('alerts-body');
-  if (!alerts.length) { body.innerHTML = '<div class="empty-state"><h3>No alerts yet</h3><div>You\\'ll see device outages and threshold breaches here.</div></div>'; return; }
+  if (!alerts.length) { body.innerHTML = '<div class="empty-state"><h3>No alerts yet</h3><div>You will see device outages and threshold breaches here.</div></div>'; return; }
   body.innerHTML = alerts.map(a => `
     <div class="alert-item">
       <div class="msg tag-${a.type}">${escapeHtml(a.message)}</div>
