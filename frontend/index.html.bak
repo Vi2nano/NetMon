@@ -502,30 +502,14 @@ function deviceRow(d){
 
 function escapeHtml(s){ return (s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-let _lastGroupOptionsSignature = null;
 function renderGroupList(){
   const el = document.getElementById('group-list');
   el.innerHTML = state.groups.map(g => {
     const count = Object.values(state.devices).filter(d => d.group_id === g.id).length;
     return `<div class="nav-item" data-filter-group="${g.id}">${escapeHtml(g.name)} <span class="count">${count}</span></div>`;
   }).join('');
-
-  // The line below rebuilds the "Group" <select> in the Add/Edit Device
-  // modal. renderGroupList() runs on every renderTable() call — which
-  // includes every live WebSocket ping update, every few seconds — so
-  // rebuilding these <option> elements unconditionally was fighting with
-  // an open dropdown (reset scroll position, jumped to the top item).
-  // Only touch the DOM here when the actual set of groups changed, and
-  // preserve whatever the user currently has selected.
-  const signature = JSON.stringify(state.groups.map(g => [g.id, g.name]));
-  if (signature !== _lastGroupOptionsSignature) {
-    _lastGroupOptionsSignature = signature;
-    const select = document.getElementById('f-group');
-    const previousValue = select.value;
-    select.innerHTML = '<option value="">Ungrouped</option>' +
-      state.groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
-    if ([...select.options].some(o => o.value === previousValue)) select.value = previousValue;
-  }
+  document.getElementById('f-group').innerHTML = '<option value="">Ungrouped</option>' +
+    state.groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
 }
 
 function renderTable(){

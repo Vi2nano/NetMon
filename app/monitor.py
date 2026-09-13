@@ -8,6 +8,7 @@ thresholds on the device, and any custom rules from the alert_rules table).
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import deque
 from typing import Callable, Optional
@@ -15,6 +16,8 @@ from typing import Callable, Optional
 from .alerts import AlertManager
 from .database import Database
 from .ping_utils import compute_jitter_ms, compute_loss_pct, ping_once, tcp_port_check
+
+log = logging.getLogger("netmon.monitor")
 
 # How often each priority level is polled.
 PRIORITY_INTERVALS = {
@@ -172,15 +175,34 @@ class MonitorEngine:
 
     async def _poll_loop(self, rt: DeviceRuntime):
         interval = PRIORITY_INTERVALS.get(rt.device["priority"], 60)
+        consecutive_errors = 0
         try:
             while True:
-                await self._check_device(rt)
-                await self._check_ports(rt)
+                try:
+                    await self._check_device(rt)
+                    await self._check_ports(rt)
 
-                stats = rt.stats()
-                await self._evaluate_builtin_thresholds(rt, stats)
-                await self._evaluate_custom_rules(rt, stats)
-                await self.broadcast({"kind": "update", "stats": stats})
+                    stats = rt.stats()
+                    await self._evaluate_builtin_thresholds(rt, stats)
+                    await self._evaluate_custom_rules(rt, stats)
+                    await self.broadcast({"kind": "update", "stats": stats})
+                    consecutive_errors = 0
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Never let an unexpected error permanently kill this device's
+                    # polling loop. Log it loudly and keep going — a device
+                    # that silently stops collecting data for hours is worse
+                    # than one that logs a stack trace and recovers.
+                    consecutive_errors += 1
+                    log.exception(
+                        "Poll cycle failed for device %s (%s) — attempt %d, will retry",
+                        rt.device.get("name"), rt.device.get("ip_address"), consecutive_errors,
+                    )
+                    # Back off a little if it's failing repeatedly, so a
+                    # persistent problem (e.g. DB locked) doesn't spin hot.
+                    await asyncio.sleep(min(interval, 5 * min(consecutive_errors, 6)))
+                    continue
 
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:

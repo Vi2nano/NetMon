@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +18,12 @@ from .alerts import AlertManager
 from .database import PRIORITIES, RULE_METRICS, RULE_OPERATORS, RULE_SCOPE_TYPES, Database
 from .monitor import MonitorEngine
 from .ping_utils import discover_path_mtu, ping_once, run_traceroute, tcp_port_check
+
+logging.basicConfig(
+    level=os.environ.get("NETMON_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+)
+log = logging.getLogger("netmon.main")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = os.environ.get("NETMON_DB_PATH", str(BASE_DIR / "data" / "netmon.db"))
@@ -75,6 +82,13 @@ async def _pruning_loop():
 async def lifespan(app: FastAPI):
     await db.connect()
     await engine.start()
+    log.info("NetMon started — monitoring %d device(s)", len(engine.runtimes))
+    for rt in engine.runtimes.values():
+        log.info(
+            "  - %s (%s) priority=%s enabled=%s polling=%s",
+            rt.device["name"], rt.device["ip_address"], rt.device["priority"],
+            rt.device["enabled"], "yes" if rt.task else "NO (disabled)",
+        )
     prune_task = asyncio.create_task(_pruning_loop())
     yield
     prune_task.cancel()
