@@ -1,9 +1,14 @@
-"""Alert creation + optional outbound webhook (Slack/Discord/generic JSON)."""
+"""Alert creation + optional outbound webhook notifications."""
 from __future__ import annotations
+
+import logging
 
 import httpx
 
 from .database import Database
+
+log = logging.getLogger("netmon.alerts")
+WEBHOOK_PROVIDERS = {"generic", "discord", "slack", "teams"}
 
 
 class AlertManager:
@@ -24,15 +29,49 @@ class AlertManager:
         url = await self.db.get_setting("webhook_url")
         if not url:
             return
-        payload = {
-            "text": f"[netmon] {message}",
+        provider = await self.db.get_setting("webhook_provider", "generic")
+        if provider not in WEBHOOK_PROVIDERS:
+            provider = "generic"
+        payload = self._payload_for(provider, device, type_, message)
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+        except Exception:
+            # Never let a webhook failure break the monitoring loop.
+            log.exception(
+                "Webhook delivery failed for host %s", httpx.URL(url).host
+            )
+
+    @staticmethod
+    def _payload_for(
+        provider: str, device: dict, type_: str, message: str
+    ) -> dict:
+        text = f"[netmon] {message}"
+        if provider == "discord":
+            return {"content": text}
+        if provider == "slack":
+            return {"text": text}
+        if provider == "teams":
+            return {
+                "@type": "MessageCard",
+                "@context": "https://schema.org/extensions",
+                "summary": text,
+                "themeColor": "E5484D",
+                "sections": [{
+                    "activityTitle": "NetMon alert",
+                    "facts": [
+                        {"name": "Device", "value": device["name"]},
+                        {"name": "IP address", "value": device["ip_address"]},
+                        {"name": "Type", "value": type_},
+                    ],
+                    "text": message,
+                    "markdown": True,
+                }],
+            }
+        return {
+            "text": text,
             "device": device["name"],
             "ip_address": device["ip_address"],
             "type": type_,
         }
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(url, json=payload)
-        except Exception:
-            # Never let a webhook failure break the monitoring loop.
-            pass

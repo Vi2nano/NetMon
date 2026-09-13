@@ -47,9 +47,8 @@ cd netmon
 
 Install the required lightweight package dependencies:
 ```bash
-pip install fastapi httpx pydantic uvicorn
+pip install -r requirements.txt
 ```
-*(Note: Ensure you install any additional dependencies required by your local database or monitoring files, such as `aiosqlite` if using an async SQLite driver).*
 
 ### 3. Environment Configuration (Optional)
 By default, NetMon initializes its database path at `data/netmon.db` inside your application directory. You can easily override this path to store data on persistent server volumes using environment variables:
@@ -65,10 +64,47 @@ export NETMON_DB_PATH="/var/lib/netmon/production.db"
 ### 4. Running the Server
 Launch the asynchronous ASGI application layout via Uvicorn:
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python run.py
 ```
 
 Open your browser and navigate to `http://localhost:8000` to access the dashboard.
+
+### Docker
+
+Build the image from the repository root:
+
+```bash
+docker build -t netmon .
+```
+
+Run it with a persistent SQLite volume:
+
+```bash
+docker volume create netmon-data
+docker run -d \
+    --name netmon \
+    --restart unless-stopped \
+    -p 8000:8000 \
+    -v netmon-data:/app/data \
+    netmon
+```
+
+Open `http://localhost:8000`. The image includes `ping` and `traceroute`,
+runs as a non-root user, and stores the database in `/app/data`.
+
+On Linux, host networking can help with local-LAN discovery and diagnostics:
+
+```bash
+docker run -d \
+    --name netmon \
+    --restart unless-stopped \
+    --network host \
+    -v netmon-data:/app/data \
+    netmon
+```
+
+With host networking, access the dashboard at `http://localhost:8000` and do
+not also publish `-p 8000:8000`.
 
 ---
 

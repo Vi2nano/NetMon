@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .alerts import AlertManager
+from .alerts import WEBHOOK_PROVIDERS, AlertManager
 from .database import PRIORITIES, RULE_METRICS, RULE_OPERATORS, RULE_SCOPE_TYPES, Database
 from .monitor import MonitorEngine
 from .ping_utils import discover_path_mtu, ping_once, run_traceroute, tcp_port_check
@@ -98,6 +98,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="NetMon", lifespan=lifespan)
 
 # ---------------------------------------------------------------- schemas
+
 
 class GroupIn(BaseModel):
     name: str
@@ -248,8 +249,9 @@ async def device_history(device_id: int, hours: int = 24):
 
 # ---------------------------------------------------------------- discovery
 
-DISCOVERY_CONCURRENCY = 40  # cap simultaneous in-flight pings so this doesn't
-                            # exhaust file descriptors / CPU in a small container
+DISCOVERY_CONCURRENCY = 40
+# cap simultaneous in-flight pings so this doesn't
+# exhaust file descriptors / CPU in a small container
 
 
 @app.post("/api/discover")
@@ -389,6 +391,21 @@ async def get_webhook_url():
 @app.put("/api/settings/webhook_url")
 async def set_webhook_url(payload: SettingIn):
     await db.set_setting("webhook_url", payload.value)
+    return {"ok": True}
+
+
+@app.get("/api/settings/webhook_provider")
+async def get_webhook_provider():
+    return {"value": await db.get_setting("webhook_provider", "generic")}
+
+
+@app.put("/api/settings/webhook_provider")
+async def set_webhook_provider(payload: SettingIn):
+    if payload.value not in WEBHOOK_PROVIDERS:
+        raise HTTPException(
+            400, f"provider must be one of {sorted(WEBHOOK_PROVIDERS)}"
+        )
+    await db.set_setting("webhook_provider", payload.value)
     return {"ok": True}
 
 

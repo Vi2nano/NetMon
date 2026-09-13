@@ -302,6 +302,15 @@
       <label>Alert webhook URL (Slack, Discord, or any endpoint accepting JSON POST)</label>
       <input id="f-webhook" placeholder="https://hooks.slack.com/services/…">
     </div>
+    <div class="field">
+      <label>Webhook type</label>
+      <select id="f-webhook-provider">
+        <option value="generic">Generic JSON</option>
+        <option value="discord">Discord</option>
+        <option value="slack">Slack</option>
+        <option value="teams">Microsoft Teams</option>
+      </select>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="settings-cancel">Close</button>
       <button class="btn btn-primary" id="settings-save">Save</button>
@@ -718,13 +727,22 @@ async function loadAlerts(){
 
 const settingsOverlay = document.getElementById('settings-overlay');
 document.getElementById('open-settings').onclick = async () => {
-  const {value} = await api('/api/settings/webhook_url');
+  const [{value}, provider] = await Promise.all([
+    api('/api/settings/webhook_url'),
+    api('/api/settings/webhook_provider'),
+  ]);
   document.getElementById('f-webhook').value = value || '';
+  document.getElementById('f-webhook-provider').value = provider.value || 'generic';
   settingsOverlay.classList.add('open');
 };
 document.getElementById('settings-cancel').onclick = () => settingsOverlay.classList.remove('open');
 document.getElementById('settings-save').onclick = async () => {
-  await api('/api/settings/webhook_url', {method:'PUT', body: JSON.stringify({value: document.getElementById('f-webhook').value.trim()})});
+  const value = document.getElementById('f-webhook').value.trim();
+  const provider = document.getElementById('f-webhook-provider').value;
+  await Promise.all([
+    api('/api/settings/webhook_url', {method:'PUT', body: JSON.stringify({value})}),
+    api('/api/settings/webhook_provider', {method:'PUT', body: JSON.stringify({value: provider})}),
+  ]);
   settingsOverlay.classList.remove('open');
 };
 

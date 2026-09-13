@@ -1,0 +1,6 @@
+PROJECT_CONTEXT.md
+.github/agents/python-web-developer.agent.md
+data/netmon.db
+data/netmon.db-shm
+data/netmon.db-wal
+data/netmon.db
