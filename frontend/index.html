@@ -96,6 +96,19 @@
   .empty-state{text-align:center;padding:70px 20px;color:var(--muted);}
   .empty-state h3{color:var(--text);margin-bottom:6px;font-weight:600;}
 
+  .device-actions-row { display: flex; gap: 6px; align-items: center; margin-top: 5px; }
+  .btn-action-tab { padding: 4px 8px; font-size: 0.75rem; background: #2d2d35; border: 1px solid #444; border-radius: 4px; color: #ccc; cursor: pointer; }
+  .btn-action-tab:hover { background: #3e3e48; color: #fff; }
+  .port-check-trigger { display: flex; align-items: center; gap: 3px; }
+  .mini-port-input { width: 45px; font-size: 0.75rem; padding: 3px; background: #18181c; border: 1px solid #444; color: #fff; border-radius: 4px; text-align: center; }
+
+  /* Details Tray Terminal Styling */
+  .tray-diagnostic-box { margin-top: 15px; border-top: 1px solid #333; padding-top: 15px; }
+  .tray-diagnostic-box h4 { margin: 0 0 8px 0; color: #aaa; font-size: 0.85rem; text-transform: uppercase; }
+  .terminal-log { background: #0c0c0f; border: 1px solid #222; border-radius: 6px; padding: 12px; color: #39ff14; font-family: monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap; max-height: 200px; }
+  .hidden-loader { display: none; }
+  .faded-text { opacity: 0.5; }
+
   /* ---------- modal / drawer ---------- */
   .overlay{position:fixed;inset:0;background:rgba(6,9,11,0.6);display:none;align-items:center;justify-content:center;z-index:50;}
   .overlay.open{display:flex;}
@@ -119,6 +132,8 @@
   .alert-item .msg{font-size:13px;margin-bottom:3px;}
   .alert-item .meta{font-size:11.5px;color:var(--muted-2);display:flex;gap:8px;align-items:center;}
   .tag-down{color:var(--crit);} .tag-recovered{color:var(--up);} .tag-high_loss{color:var(--warn);} .tag-high_latency{color:var(--warn);}
+  .tag-port_down{color:var(--crit);} .tag-port_recovered{color:var(--up);}
+  .alert-item .msg[class*="tag-rule_"]{color:var(--warn);}
   .resolved-tag{color:var(--muted-2);font-size:10.5px;border:1px solid var(--border);border-radius:3px;padding:0 4px;}
 
   #detail-drawer .drawer-body{padding:0;}
@@ -137,6 +152,45 @@
   .toast{background:var(--panel-2);border:1px solid var(--border);border-left:3px solid var(--info);padding:10px 14px;border-radius:6px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.3);}
   .toast.crit{border-left-color:var(--crit);}
   .toast.up{border-left-color:var(--up);}
+
+  /* Drawer Base Animation Trackers */
+.drawer {
+    position: fixed;
+    top: 0;
+    right: -450px; /* Hidden out of bounds by default */
+    width: 400px;
+    height: 100%;
+    background: #1e1e24; /* Styled dark to match standard dark dashboards */
+    box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+    transition: right 0.3s ease-in-out;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    color: #ffffff;
+}
+.drawer.open {
+    right: 0;
+}
+.drawer-header { padding: 20px; border-bottom: 1px solid #2d2d35; display: flex; justify-content: space-between; align-items: center; }
+.drawer-body { padding: 20px; flex: 1; overflow-y: auto; }
+.drawer-footer { padding: 20px; border-top: 1px solid #2d2d35; background: #18181c; }
+.staging-area { margin-top: 20px; }
+.discovered-item { display: flex; align-items: center; padding: 10px; background: #2a2a32; margin-bottom: 8px; border-radius: 4px; }
+.discovered-item input { margin-right: 12px; transform: scale(1.2); }
+.hidden { display: none !important; }
+
+.rule-item{border-bottom:1px solid var(--border);padding:10px 4px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.rule-item:last-child{border-bottom:none;}
+.rule-item .rname{font-weight:500;font-size:13px;margin-bottom:2px;}
+.rule-item .rmeta{font-size:11.5px;color:var(--muted-2);}
+.rule-item .ractions{display:flex;gap:4px;flex-shrink:0;}
+.rule-disabled{opacity:0.45;}
+.port-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;}
+.port-row:last-child{border-bottom:none;}
+.port-row .left{display:flex;align-items:center;gap:8px;}
+.port-meta{color:var(--muted-2);font-size:11px;}
+.port-remove{background:none;border:none;color:var(--muted-2);cursor:pointer;font-size:13px;}
+.port-remove:hover{color:var(--crit);}
 
   @media (max-width: 760px){
     #app{grid-template-columns:1fr;}
@@ -182,6 +236,7 @@
       <h1>Devices</h1>
       <input id="search" placeholder="Filter by name or IP…">
       <button class="btn icon-btn btn-ghost" id="open-alerts">Alerts<span class="badge" id="alert-badge" style="display:none">0</span></button>
+      <button class="btn btn-ghost" id="open-rules">Rules</button>
       <button class="btn btn-ghost" id="open-settings">Settings</button>
       <button class="btn btn-primary" id="open-add-device">+ Add device</button>
     </div>
@@ -260,6 +315,60 @@
   <div class="drawer-body" id="alerts-body"></div>
 </div>
 
+<!-- Alert rules modal -->
+<div class="overlay" id="rules-overlay">
+  <div class="modal" style="width:640px;max-height:82vh;display:flex;flex-direction:column;">
+    <h2>Alert rules</h2>
+    <div style="overflow:auto;flex:1;margin-bottom:14px;" id="rules-list"></div>
+    <div class="rule-form" id="rule-form" style="background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:14px;">
+      <div class="field-row">
+        <div class="field"><label>Rule name</label><input id="r-name" placeholder="Core switch high latency"></div>
+        <div class="field"><label>Applies to</label>
+          <select id="r-scope-type">
+            <option value="all">All devices</option>
+            <option value="group">A group</option>
+            <option value="device">A specific device</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" id="r-scope-id-field" style="display:none">
+        <label id="r-scope-id-label">Group</label>
+        <select id="r-scope-id"></select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Metric</label>
+          <select id="r-metric">
+            <option value="latency_ms">Latency (ms)</option>
+            <option value="jitter_ms">Jitter (ms)</option>
+            <option value="loss_pct">Packet loss (%)</option>
+            <option value="port_down">A monitored port goes down</option>
+          </select>
+        </div>
+        <div class="field" id="r-operator-field"><label>Condition</label>
+          <select id="r-operator">
+            <option value=">=">is at least</option>
+            <option value=">">is more than</option>
+            <option value="<=">is at most</option>
+            <option value="<">is less than</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field" id="r-threshold-field"><label>Threshold</label><input id="r-threshold" type="number" step="any"></div>
+        <div class="field" id="r-port-field" style="display:none"><label>Port</label><input id="r-port" type="number" min="1" max="65535"></div>
+        <div class="field"><label>Cooldown (minutes)</label><input id="r-cooldown" type="number" value="10" min="0"></div>
+      </div>
+      <div class="modal-actions" style="margin-top:6px;">
+        <button class="btn btn-ghost" id="rule-form-cancel" style="display:none">Cancel edit</button>
+        <button class="btn btn-primary" id="rule-save">Add rule</button>
+      </div>
+    </div>
+    <div class="modal-actions" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+      <button class="btn btn-ghost" id="rules-close">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Device detail drawer -->
 <div class="drawer" id="detail-drawer">
   <div class="drawer-header"><h2 id="detail-title">Device</h2><button class="icon-sm" id="close-detail">✕</button></div>
@@ -278,7 +387,55 @@
     <div class="chart-wrap"><h4>Latency &amp; jitter over time</h4><canvas id="chart-latency" height="140"></canvas></div>
     <div class="chart-wrap"><h4>Packet loss over time</h4><canvas id="chart-loss" height="100"></canvas></div>
   </div>
+    <div class="device-settings">
+      <h4 style="font-size:12px;color:var(--muted);margin:0 0 8px;">Monitored ports</h4>
+      <div id="detail-ports-list" style="margin-bottom:8px;"></div>
+      <div class="field-row">
+        <input id="new-port-number" type="number" min="1" max="65535" placeholder="Port, e.g. 443" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;font-size:12.5px;flex:1;">
+        <input id="new-port-label" placeholder="Label (optional)" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;font-size:12.5px;flex:1;">
+        <button class="btn btn-ghost" id="add-port-btn" style="padding:7px 11px;">+ Add</button>
+      </div>
+    </div>
+    <div id="tray-diagnostic-section" class="tray-diagnostic-box">
+      <h4>🛠️ Manual diagnostics</h4>
+      <div class="device-actions-row" style="margin-bottom:10px;">
+        <button class="btn-action-tab" id="run-traceroute-btn">🗺️ Traceroute</button>
+        <button class="btn-action-tab" id="run-mtu-btn">📦 Check MTU</button>
+        <div class="port-check-trigger">
+          <input type="number" id="quick-port-val" value="80" class="mini-port-input" min="1" max="65535">
+          <button class="btn-action-tab" id="run-portcheck-btn">🔌 Test port</button>
+        </div>
+      </div>
+      <div id="diagnostic-loader" class="hidden-loader">Running network operation…</div>
+      <pre id="diagnostic-terminal-output" class="terminal-log">Run a check above to see output here…</pre>
+    </div>
 </div>
+
+<!-- Floating Action Navigation Item -->
+<button id="open-discovery-btn" class="btn btn-secondary">📡 Discovery</button>
+
+<!-- Slide-Out Overlay Drawer Container -->
+<div id="discovery-drawer" class="drawer">
+    <div class="drawer-header">
+        <h2>Network Subnet Discovery</h2>
+        <button id="close-discovery-btn" class="close-btn">&times;</button>
+    </div>
+    <div class="drawer-body">
+        <div class="input-group">
+            <input type="text" id="scan-subnet-input" placeholder="e.g., 192.168.1.1/24" class="form-input">
+            <button id="start-scan-btn" class="btn btn-primary">Scan Range</button>
+        </div>
+
+        <!-- Interactive Staging Checklist Area -->
+        <div id="scan-results-container" class="staging-area">
+            <p class="placeholder-text">Enter a subnet range and run a scan to find active network nodes...</p>
+        </div>
+    </div>
+    <div class="drawer-footer hidden" id="drawer-actions">
+        <button id="add-selected-btn" class="btn btn-success">Monitor Selected (<span id="selected-count">0</span>)</button>
+    </div>
+</div>
+
 
 <div class="toast-stack" id="toast-stack"></div>
 
@@ -402,7 +559,10 @@ function applyLiveUpdate(stats){
   if (!d) return;
   d.live = stats;
   renderTable();
-  if (state.currentDetailId === stats.device_id) renderDetailStats(stats);
+  if (state.currentDetailId === stats.device_id) {
+    renderDetailStats(stats);
+    loadDetailPorts(stats.device_id);
+  }
 }
 
 // ---------------- websocket ----------------
@@ -429,7 +589,7 @@ function setWsStatus(live){
 function onNewAlert(alert){
   refreshAlertBadge();
   const t = document.createElement('div');
-  const cls = alert.type === 'down' ? 'crit' : (alert.type === 'recovered' ? 'up' : '');
+  const cls = /down$/.test(alert.type) ? 'crit' : (/recovered$/.test(alert.type) ? 'up' : '');
   t.className = 'toast ' + cls;
   t.textContent = alert.message;
   document.getElementById('toast-stack').appendChild(t);
@@ -563,9 +723,11 @@ async function openDetail(id){
   state.currentDetailId = id;
   const d = state.devices[id];
   document.getElementById('detail-title').textContent = `${d.name} — ${d.ip_address}`;
+  document.getElementById('diagnostic-terminal-output').textContent = 'Run a check above to see output here…';
   detailDrawer.classList.add('open');
   renderDetailStats(d.live || {});
   await loadHistory(id, 24);
+  await loadDetailPorts(id);
 }
 
 function renderDetailStats(live){
@@ -628,8 +790,288 @@ function chartOptions(){
     }
   };
 }
+// ---------------- ports (persisted monitoring, shown in detail drawer) ----------------
 
-// ---------------- boot ----------------
+async function loadDetailPorts(deviceId){
+  const ports = await api(`/api/devices/${deviceId}/ports`);
+  const live = state.devices[deviceId]?.live?.ports || [];
+  const list = document.getElementById('detail-ports-list');
+  if (!ports.length) {
+    list.innerHTML = `<div style="color:var(--muted-2);font-size:12px;">No ports monitored yet.</div>`;
+  } else {
+    list.innerHTML = ports.map(p => {
+      const liveStat = live.find(l => l.port_id === p.id) || {};
+      const status = liveStat.status || 'unknown';
+      return `
+      <div class="port-row" data-port-id="${p.id}">
+        <div class="left">
+          <div class="status-pill ${status}"></div>
+          <span class="mono">${p.port}</span>${p.label ? `<span class="port-meta">${escapeHtml(p.label)}</span>` : ''}
+        </div>
+        <button class="port-remove" data-remove-port="${p.id}" title="Remove">✕</button>
+      </div>`;
+    }).join('');
+  }
+  list.querySelectorAll('[data-remove-port]').forEach(btn => {
+    btn.onclick = async () => { await api(`/api/ports/${btn.dataset.removePort}`, {method:'DELETE'}); loadDetailPorts(deviceId); };
+  });
+}
+
+document.getElementById('add-port-btn').onclick = async () => {
+  const deviceId = state.currentDetailId;
+  if (!deviceId) return;
+  const portNum = Number(document.getElementById('new-port-number').value);
+  if (!portNum) return;
+  const label = document.getElementById('new-port-label').value.trim();
+  await api(`/api/devices/${deviceId}/ports`, {method:'POST', body: JSON.stringify({port: portNum, label})});
+  document.getElementById('new-port-number').value = '';
+  document.getElementById('new-port-label').value = '';
+  loadDetailPorts(deviceId);
+};
+
+// ---------------- manual diagnostics (traceroute / MTU / port check) ----------------
+
+async function runDiagnostic(actionType){
+  const deviceId = state.currentDetailId;
+  if (!deviceId) return;
+  const terminal = document.getElementById('diagnostic-terminal-output');
+  const loader = document.getElementById('diagnostic-loader');
+  loader.classList.remove('hidden-loader');
+  terminal.classList.add('faded-text');
+  terminal.textContent = `Running ${actionType}…`;
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/action/${actionType}`, {method:'POST'});
+    const data = await res.json();
+    if (!res.ok) { terminal.textContent = data.detail || 'Request failed.'; return; }
+    if (actionType === 'mtu') {
+      terminal.textContent = data.output + (data.mtu ? `\n\nPath MTU: ${data.mtu} bytes` : '');
+    } else {
+      terminal.textContent = data.output || 'Operation finished with no output.';
+    }
+  } catch (err) {
+    terminal.textContent = `Failed to reach the server: ${err.message}`;
+  } finally {
+    loader.classList.add('hidden-loader');
+    terminal.classList.remove('faded-text');
+  }
+}
+
+document.getElementById('run-traceroute-btn').onclick = () => runDiagnostic('traceroute');
+document.getElementById('run-mtu-btn').onclick = () => runDiagnostic('mtu');
+document.getElementById('run-portcheck-btn').onclick = async () => {
+  const deviceId = state.currentDetailId;
+  if (!deviceId) return;
+  const port = Number(document.getElementById('quick-port-val').value) || 80;
+  const terminal = document.getElementById('diagnostic-terminal-output');
+  const loader = document.getElementById('diagnostic-loader');
+  loader.classList.remove('hidden-loader');
+  terminal.textContent = `Testing TCP port ${port}…`;
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/action/portcheck`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({port}),
+    });
+    const data = await res.json();
+    terminal.textContent = data.output || 'No output returned.';
+  } catch (err) {
+    terminal.textContent = `Failed to reach the server: ${err.message}`;
+  } finally {
+    loader.classList.add('hidden-loader');
+  }
+};
+
+// ---------------- alert rules ----------------
+
+const rulesOverlay = document.getElementById('rules-overlay');
+let editingRuleId = null;
+
+document.getElementById('open-rules').onclick = () => { rulesOverlay.classList.add('open'); loadRules(); };
+document.getElementById('rules-close').onclick = () => rulesOverlay.classList.remove('open');
+rulesOverlay.addEventListener('click', (e) => { if (e.target === rulesOverlay) rulesOverlay.classList.remove('open'); });
+
+function metricLabel(m){ return {latency_ms:'Latency', jitter_ms:'Jitter', loss_pct:'Packet loss', port_down:'Port down'}[m] || m; }
+function scopeLabel(rule){
+  if (rule.scope_type === 'all') return 'All devices';
+  if (rule.scope_type === 'device') { const d = state.devices[rule.scope_id]; return d ? d.name : `Device #${rule.scope_id}`; }
+  if (rule.scope_type === 'group') { const g = state.groups.find(g => g.id === rule.scope_id); return g ? g.name : `Group #${rule.scope_id}`; }
+  return rule.scope_type;
+}
+function conditionLabel(rule){
+  if (rule.metric === 'port_down') return `port ${rule.port} goes down`;
+  const unit = rule.metric === 'loss_pct' ? '%' : 'ms';
+  return `${metricLabel(rule.metric).toLowerCase()} ${rule.operator} ${rule.threshold}${unit}`;
+}
+
+async function loadRules(){
+  const rules = await api('/api/rules');
+  const list = document.getElementById('rules-list');
+  if (!rules.length) { list.innerHTML = `<div style="color:var(--muted-2);font-size:12.5px;padding:8px 4px;">No rules yet — add one below.</div>`; return; }
+  list.innerHTML = rules.map(r => `
+    <div class="rule-item ${r.enabled ? '' : 'rule-disabled'}">
+      <div>
+        <div class="rname">${escapeHtml(r.name)}</div>
+        <div class="rmeta">${scopeLabel(r)} · ${conditionLabel(r)} · ${r.cooldown_minutes}m cooldown${r.enabled ? '' : ' · disabled'}</div>
+      </div>
+      <div class="ractions">
+        <button class="icon-sm" data-toggle-rule="${r.id}" data-enabled="${r.enabled}" title="${r.enabled ? 'Disable' : 'Enable'}">${r.enabled ? '⏸' : '▶'}</button>
+        <button class="icon-sm" data-edit-rule="${r.id}" title="Edit">✎</button>
+        <button class="icon-sm" data-delete-rule="${r.id}" title="Delete">🗑</button>
+      </div>
+    </div>`).join('');
+
+  list.querySelectorAll('[data-toggle-rule]').forEach(btn => {
+    btn.onclick = async () => {
+      await api(`/api/rules/${btn.dataset.toggleRule}`, {method:'PATCH', body: JSON.stringify({enabled: btn.dataset.enabled !== 'true'})});
+      loadRules();
+    };
+  });
+  list.querySelectorAll('[data-delete-rule]').forEach(btn => {
+    btn.onclick = async () => { if (confirm('Delete this rule?')) { await api(`/api/rules/${btn.dataset.deleteRule}`, {method:'DELETE'}); loadRules(); } };
+  });
+  list.querySelectorAll('[data-edit-rule]').forEach(btn => {
+    btn.onclick = async () => {
+      const rules = await api('/api/rules');
+      const rule = rules.find(r => r.id === Number(btn.dataset.editRule));
+      if (rule) openRuleForm(rule);
+    };
+  });
+}
+
+function updateRuleScopeOptions(){
+  const type = document.getElementById('r-scope-type').value;
+  const field = document.getElementById('r-scope-id-field');
+  const select = document.getElementById('r-scope-id');
+  const label = document.getElementById('r-scope-id-label');
+  if (type === 'all') { field.style.display = 'none'; return; }
+  field.style.display = '';
+  if (type === 'group') {
+    label.textContent = 'Group';
+    select.innerHTML = state.groups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+  } else {
+    label.textContent = 'Device';
+    select.innerHTML = Object.values(state.devices).map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+  }
+}
+document.getElementById('r-scope-type').onchange = updateRuleScopeOptions;
+
+function updateRuleMetricFields(){
+  const metric = document.getElementById('r-metric').value;
+  const isPort = metric === 'port_down';
+  document.getElementById('r-operator-field').style.display = isPort ? 'none' : '';
+  document.getElementById('r-threshold-field').style.display = isPort ? 'none' : '';
+  document.getElementById('r-port-field').style.display = isPort ? '' : 'none';
+}
+document.getElementById('r-metric').onchange = updateRuleMetricFields;
+
+function openRuleForm(rule){
+  editingRuleId = rule ? rule.id : null;
+  document.getElementById('r-name').value = rule ? rule.name : '';
+  document.getElementById('r-scope-type').value = rule ? rule.scope_type : 'all';
+  updateRuleScopeOptions();
+  if (rule && rule.scope_type !== 'all') document.getElementById('r-scope-id').value = rule.scope_id;
+  document.getElementById('r-metric').value = rule ? rule.metric : 'latency_ms';
+  updateRuleMetricFields();
+  document.getElementById('r-operator').value = rule ? rule.operator : '>=';
+  document.getElementById('r-threshold').value = rule && rule.threshold !== null ? rule.threshold : '';
+  document.getElementById('r-port').value = rule && rule.port ? rule.port : '';
+  document.getElementById('r-cooldown').value = rule ? rule.cooldown_minutes : 10;
+  document.getElementById('rule-save').textContent = rule ? 'Save changes' : 'Add rule';
+  document.getElementById('rule-form-cancel').style.display = rule ? '' : 'none';
+}
+document.getElementById('rule-form-cancel').onclick = () => openRuleForm(null);
+
+document.getElementById('rule-save').onclick = async () => {
+  const metric = document.getElementById('r-metric').value;
+  const scopeType = document.getElementById('r-scope-type').value;
+  const payload = {
+    name: document.getElementById('r-name').value.trim(),
+    scope_type: scopeType,
+    scope_id: scopeType === 'all' ? null : Number(document.getElementById('r-scope-id').value),
+    metric,
+    operator: document.getElementById('r-operator').value,
+    threshold: metric === 'port_down' ? null : Number(document.getElementById('r-threshold').value),
+    port: metric === 'port_down' ? Number(document.getElementById('r-port').value) : null,
+    cooldown_minutes: Number(document.getElementById('r-cooldown').value),
+  };
+  if (!payload.name) return alert('Give the rule a name.');
+  try {
+    if (editingRuleId) await api(`/api/rules/${editingRuleId}`, {method:'PATCH', body: JSON.stringify(payload)});
+    else await api('/api/rules', {method:'POST', body: JSON.stringify(payload)});
+    openRuleForm(null);
+    loadRules();
+  } catch (e) { alert('Could not save rule: ' + e.message); }
+};
+
+// ---------------- discovery drawer ----------------
+// Toggle Drawer Views
+const drawer = document.getElementById('discovery-drawer');
+document.getElementById('open-discovery-btn').addEventListener('click', () => drawer.classList.add('open'));
+document.getElementById('close-discovery-btn').addEventListener('click', () => drawer.classList.remove('open'));
+
+// Trigger Asynchronous Background Subnet Check
+document.getElementById('start-scan-btn').addEventListener('click', async () => {
+    const subnet = document.getElementById('scan-subnet-input').value;
+    const container = document.getElementById('scan-results-container');
+
+    container.innerHTML = '<div class="loader">Sweeping network blocks, please wait...</div>';
+
+    try {
+        const res = await fetch('/api/discover', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ subnet })
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.detail || 'Scan failed');
+
+        if (data.hosts.length === 0) {
+            container.innerHTML = '<p class="no-hosts">No responding hosts discovered in this range.</p>';
+            document.getElementById('drawer-actions').classList.add('hidden');
+            return;
+        }
+
+        // Render targets inside checkboxes
+        container.innerHTML = data.hosts.map(ip => `
+            <label class="discovered-item">
+                <input type="checkbox" class="scan-checkbox" value="${ip}" onchange="updateSelectedCount()">
+                <span>${ip}</span>
+            </label>
+        `).join('');
+
+        document.getElementById('drawer-actions').classList.remove('hidden');
+        updateSelectedCount();
+    } catch (err) {
+        container.innerHTML = `<p class="error-text">${err.message}</p>`;
+    }
+});
+
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.scan-checkbox:checked').length;
+    document.getElementById('selected-count').innerText = checked;
+}
+
+// Bulk Add Monitored Targets From Staging List
+document.getElementById('add-selected-btn').addEventListener('click', async () => {
+    const checkboxes = document.querySelectorAll('.scan-checkbox:checked');
+    for (const cb of checkboxes) {
+        const ip = cb.value;
+        // Post directly to your verified main API channel
+        await fetch('/api/devices', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: `Discovered Host (${ip})`,
+                ip_address: ip,
+                priority: "normal",
+                enabled: true,
+                latency_threshold_ms: 200,
+                loss_threshold_pct: 20.0
+            })
+        });
+    }
+    drawer.classList.remove('open');
+    loadAll();
+});
 
 loadAll();
 connectWS();

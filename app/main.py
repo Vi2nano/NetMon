@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 from contextlib import asynccontextmanager
@@ -13,8 +14,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .alerts import AlertManager
-from .database import PRIORITIES, Database
+from .database import PRIORITIES, RULE_METRICS, RULE_OPERATORS, RULE_SCOPE_TYPES, Database
 from .monitor import MonitorEngine
+from .ping_utils import discover_path_mtu, ping_once, run_traceroute, tcp_port_check
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = os.environ.get("NETMON_DB_PATH", str(BASE_DIR / "data" / "netmon.db"))
@@ -79,9 +81,7 @@ async def lifespan(app: FastAPI):
     await engine.stop()
     await db.close()
 
-
 app = FastAPI(title="NetMon", lifespan=lifespan)
-
 
 # ---------------------------------------------------------------- schemas
 
@@ -111,6 +111,56 @@ class DeviceUpdate(BaseModel):
 
 class SettingIn(BaseModel):
     value: str
+
+
+class ScanPayload(BaseModel):
+    subnet: str  # Expects CIDR like "192.168.1.0/24"
+
+
+class PortCheckPayload(BaseModel):
+    port: int = Field(default=443, ge=1, le=65535)
+
+
+class PortIn(BaseModel):
+    port: int = Field(ge=1, le=65535)
+    label: str = ""
+
+
+class RuleIn(BaseModel):
+    name: str
+    scope_type: str = "all"
+    scope_id: Optional[int] = None
+    metric: str
+    operator: str = ">="
+    threshold: Optional[float] = None
+    port: Optional[int] = None
+    cooldown_minutes: int = Field(default=10, ge=0)
+    enabled: bool = True
+
+
+class RuleUpdate(BaseModel):
+    name: Optional[str] = None
+    scope_type: Optional[str] = None
+    scope_id: Optional[int] = None
+    metric: Optional[str] = None
+    operator: Optional[str] = None
+    threshold: Optional[float] = None
+    port: Optional[int] = None
+    cooldown_minutes: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+def _validate_rule(payload: dict):
+    if payload.get("scope_type") and payload["scope_type"] not in RULE_SCOPE_TYPES:
+        raise HTTPException(400, f"scope_type must be one of {RULE_SCOPE_TYPES}")
+    if payload.get("metric") and payload["metric"] not in RULE_METRICS:
+        raise HTTPException(400, f"metric must be one of {RULE_METRICS}")
+    if payload.get("operator") and payload["operator"] not in RULE_OPERATORS:
+        raise HTTPException(400, f"operator must be one of {RULE_OPERATORS}")
+    if payload.get("metric") == "port_down" and not payload.get("port"):
+        raise HTTPException(400, "port is required when metric is 'port_down'")
+    if payload.get("metric") and payload.get("metric") != "port_down" and payload.get("threshold") is None:
+        raise HTTPException(400, "threshold is required for this metric")
 
 
 # ---------------------------------------------------------------- groups
@@ -182,6 +232,132 @@ async def device_history(device_id: int, hours: int = 24):
     return await db.history(device_id, hours=hours)
 
 
+# ---------------------------------------------------------------- discovery
+
+DISCOVERY_CONCURRENCY = 40  # cap simultaneous in-flight pings so this doesn't
+                            # exhaust file descriptors / CPU in a small container
+
+
+@app.post("/api/discover")
+async def discover_subnet(payload: ScanPayload):
+    try:
+        network = ipaddress.ip_network(payload.subnet, strict=False)
+    except ValueError:
+        raise HTTPException(400, "Invalid CIDR subnet format. Use e.g., 192.168.1.0/24")
+
+    if network.num_addresses > 256:
+        raise HTTPException(400, "Subnet scan range limited to /24 networks (256 IPs) at a time")
+
+    sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
+
+    async def probe(ip: str) -> Optional[str]:
+        async with sem:
+            result = await ping_once(ip, timeout_s=0.8)
+        return ip if result.success else None
+
+    hosts = [str(h) for h in network.hosts()] or [str(network.network_address)]
+    try:
+        results = await asyncio.gather(*(probe(ip) for ip in hosts))
+    except Exception as e:
+        raise HTTPException(500, f"Scan failed: {e}")
+
+    discovered_hosts = [ip for ip in results if ip is not None]
+    return {"hosts": discovered_hosts}
+
+
+# ---------------------------------------------------------------- device manual diagnostics
+
+@app.post("/api/devices/{device_id}/action/traceroute")
+async def action_traceroute(device_id: int):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+    return await run_traceroute(device["ip_address"])
+
+
+@app.post("/api/devices/{device_id}/action/mtu")
+async def action_mtu(device_id: int):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+    return await discover_path_mtu(device["ip_address"])
+
+
+@app.post("/api/devices/{device_id}/action/portcheck")
+async def action_portcheck(device_id: int, payload: PortCheckPayload):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+    result = await tcp_port_check(device["ip_address"], payload.port)
+    if result.success:
+        return {"ok": True, "output": f"Port {payload.port} is OPEN — connected in {result.latency_ms:.1f} ms."}
+    return {"ok": False, "output": f"Port {payload.port} is CLOSED or filtered ({result.error})."}
+
+
+# ---------------------------------------------------------------- persisted port monitoring
+
+@app.get("/api/devices/{device_id}/ports")
+async def list_ports(device_id: int):
+    return await db.list_ports(device_id)
+
+
+@app.post("/api/devices/{device_id}/ports")
+async def add_port(device_id: int, payload: PortIn):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+    await db.create_port(device_id, payload.port, payload.label)
+    await engine.refresh_device(device)  # re-reads ports from the DB
+    return await db.list_ports(device_id)
+
+
+@app.delete("/api/ports/{port_id}")
+async def delete_port(port_id: int):
+    port = await db.get_port(port_id)
+    if not port:
+        raise HTTPException(404, "Port not found")
+    device = await db.get_device(port["device_id"])
+    await db.delete_port(port_id)
+    if device:
+        await engine.refresh_device(device)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- alert rules
+
+@app.get("/api/rules")
+async def get_rules():
+    return await db.list_rules()
+
+
+@app.post("/api/rules")
+async def create_rule(payload: RuleIn):
+    data = payload.model_dump()
+    _validate_rule(data)
+    rule = await db.create_rule(data)
+    await engine.reload_rules()
+    return rule
+
+
+@app.patch("/api/rules/{rule_id}")
+async def update_rule(rule_id: int, payload: RuleUpdate):
+    existing = await db.get_rule(rule_id)
+    if not existing:
+        raise HTTPException(404, "Rule not found")
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    _validate_rule({**existing, **data})
+    rule = await db.update_rule(rule_id, data)
+    await engine.reload_rules()
+    return rule
+
+
+@app.delete("/api/rules/{rule_id}")
+async def delete_rule(rule_id: int):
+    await db.delete_rule(rule_id)
+    await engine.reload_rules()
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- alerts
 
 @app.get("/api/alerts")
@@ -208,12 +384,8 @@ async def set_webhook_url(payload: SettingIn):
 async def ws_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
-        # Send an initial full snapshot so a newly connected client doesn't
-        # have to wait for the next poll cycle of every device.
         await ws.send_text(json.dumps({"kind": "snapshot", "stats": engine.snapshot_all()}, default=str))
         while True:
-            # We don't expect the client to send anything meaningful, but
-            # keep the receive loop alive to detect disconnects promptly.
             await ws.receive_text()
     except WebSocketDisconnect:
         pass

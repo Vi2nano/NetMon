@@ -52,9 +52,35 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS ports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    port INTEGER NOT NULL,
+    label TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    scope_type TEXT NOT NULL DEFAULT 'all',     -- 'all' | 'group' | 'device'
+    scope_id INTEGER,                           -- group_id or device_id, depending on scope_type
+    metric TEXT NOT NULL,                       -- 'latency_ms' | 'jitter_ms' | 'loss_pct' | 'port_down'
+    operator TEXT NOT NULL DEFAULT '>=',        -- '>' | '>=' | '<' | '<='
+    threshold REAL,
+    port INTEGER,                               -- required when metric = 'port_down'
+    cooldown_minutes INTEGER NOT NULL DEFAULT 10,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 PRIORITIES = ("critical", "high", "normal", "low")
+RULE_METRICS = ("latency_ms", "jitter_ms", "loss_pct", "port_down")
+RULE_OPERATORS = (">", ">=", "<", "<=")
+RULE_SCOPE_TYPES = ("all", "group", "device")
 
 
 class Database:
@@ -250,4 +276,76 @@ class Database:
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, json.dumps(value)),
         )
+        await self.conn.commit()
+
+    # ---------- ports ----------
+
+    async def list_ports(self, device_id: Optional[int] = None) -> list[dict]:
+        if device_id is not None:
+            cur = await self.conn.execute("SELECT * FROM ports WHERE device_id=? ORDER BY port", (device_id,))
+        else:
+            cur = await self.conn.execute("SELECT * FROM ports ORDER BY device_id, port")
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def get_port(self, port_id: int) -> Optional[dict]:
+        cur = await self.conn.execute("SELECT * FROM ports WHERE id=?", (port_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def create_port(self, device_id: int, port: int, label: str = "") -> dict:
+        cur = await self.conn.execute(
+            "INSERT INTO ports (device_id, port, label) VALUES (?, ?, ?)",
+            (device_id, port, label),
+        )
+        await self.conn.commit()
+        return await self.get_port(cur.lastrowid)
+
+    async def delete_port(self, port_id: int):
+        await self.conn.execute("DELETE FROM ports WHERE id=?", (port_id,))
+        await self.conn.commit()
+
+    # ---------- alert rules ----------
+
+    async def list_rules(self) -> list[dict]:
+        cur = await self.conn.execute("SELECT * FROM alert_rules ORDER BY created_at DESC")
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def get_rule(self, rule_id: int) -> Optional[dict]:
+        cur = await self.conn.execute("SELECT * FROM alert_rules WHERE id=?", (rule_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def create_rule(self, data: dict) -> dict:
+        cur = await self.conn.execute(
+            """INSERT INTO alert_rules
+               (name, scope_type, scope_id, metric, operator, threshold, port, cooldown_minutes, enabled)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["name"], data.get("scope_type", "all"), data.get("scope_id"),
+                data["metric"], data.get("operator", ">="), data.get("threshold"),
+                data.get("port"), data.get("cooldown_minutes", 10), int(data.get("enabled", True)),
+            ),
+        )
+        await self.conn.commit()
+        return await self.get_rule(cur.lastrowid)
+
+    async def update_rule(self, rule_id: int, data: dict) -> Optional[dict]:
+        existing = await self.get_rule(rule_id)
+        if not existing:
+            return None
+        merged = {**existing, **data}
+        await self.conn.execute(
+            """UPDATE alert_rules SET name=?, scope_type=?, scope_id=?, metric=?, operator=?,
+               threshold=?, port=?, cooldown_minutes=?, enabled=? WHERE id=?""",
+            (
+                merged["name"], merged["scope_type"], merged["scope_id"], merged["metric"],
+                merged["operator"], merged["threshold"], merged["port"],
+                merged["cooldown_minutes"], int(merged["enabled"]), rule_id,
+            ),
+        )
+        await self.conn.commit()
+        return await self.get_rule(rule_id)
+
+    async def delete_rule(self, rule_id: int):
+        await self.conn.execute("DELETE FROM alert_rules WHERE id=?", (rule_id,))
         await self.conn.commit()
