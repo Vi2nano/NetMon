@@ -88,3 +88,19 @@ NetMon exposes a fully documented REST API alongside its real-time WebSocket cha
 
 Distributed under the **GNU GPLv3 License**. See the `LICENSE` file in the root of this repository for full copyleft terms and conditions regarding modification and distribution.
 
+## Example Main Overview
+<img width="1542" height="650" alt="MainOverview" src="https://github.com/user-attachments/assets/f3095a15-fe42-4ded-b09c-26c150637d19" />
+
+## Example Add Device
+<img width="1602" height="886" alt="AddDevice" src="https://github.com/user-attachments/assets/cca76e71-ce74-4aba-ab74-92ad2dbf2152" />
+
+## Example Priorities Selector
+<img width="1696" height="967" alt="Priorities" src="https://github.com/user-attachments/assets/14622018-3fa1-4053-8169-9951484b1783" />
+
+## Example Settings/WebHook Entry
+<img width="1696" height="967" alt="Settings" src="https://github.com/user-attachments/assets/33013229-87f2-433d-8c47-92257f295a97" />
+
+## Example Alerts
+<img width="2358" height="1148" alt="Screenshot From 2026-09-13 00-54-28" src="https://github.com/user-attachments/assets/0ba945c1-be12-4c78-a911-b099d70c5ca9" />
+
+
