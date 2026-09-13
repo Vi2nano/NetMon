@@ -7,9 +7,12 @@ WORKDIR /app
 
 RUN apk add --no-cache gcc musl-dev libffi-dev
 
+RUN python -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+
 RUN pip install --no-cache-dir --upgrade pip
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 FROM python:3.13-alpine AS runner
@@ -23,8 +26,8 @@ RUN apk add --no-cache iputils-ping traceroute libcap \
 	&& setcap cap_net_raw+ep /bin/ping \
 	&& setcap cap_net_raw+ep /usr/bin/traceroute
 
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
 
 COPY . .
 

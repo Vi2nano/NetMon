@@ -32,49 +32,57 @@ NetMon is structured cleanly to ensure low resource overhead, making it perfect 
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting Started - Prerequisites
+- **[Docker Engine and Docker CLI](https://docs.docker.com/engine/install/)**
+    - [Docker installation guide](https://docs.docker.com/engine/install/)
+    - [Post-install steps for running Docker as your user](https://docs.docker.com/engine/install/linux-postinstall/)
+- **[Git](https://git-scm.com/downloads)**, only if you plan to build the image from source
 
-### 1. Prerequisites
-- **Python 3.9+**
-- **pip** (Python package installer)
+Python, `ping`, and `traceroute` are included in the Docker image and do not
+need to be installed on the host. Docker Compose is not required.
 
-### 2. Installation
-Clone your repository and navigate into the project directory:
-```bash
-git clone <your-repo-url>
-cd netmon
-```
 
-Install the required lightweight package dependencies:
-```bash
-pip install -r requirements.txt
-```
+### Docker Installation
 
-### 3. Environment Configuration (Optional)
-By default, NetMon initializes its database path at `data/netmon.db` inside your application directory. You can easily override this path to store data on persistent server volumes using environment variables:
+#### Install the published image
+
+Pull the latest image from GitHub Container Registry:
 
 ```bash
-# On Linux/macOS
-export NETMON_DB_PATH="/var/lib/netmon/production.db"
-
-# On Windows (PowerShell)
-\$env:NETMON_DB_PATH="C:\netmon\data\production.db"
+docker pull ghcr.io/vi2nano/netmon:latest
 ```
 
-### 4. Running the Server
-Launch the asynchronous ASGI application layout via Uvicorn:
+#### Run the container
+
+Create a persistent SQLite volume and start NetMon:
+
 ```bash
-python run.py
+docker volume create netmon-data
+docker run -d \
+    --name netmon \
+    --restart unless-stopped \
+    -p 8000:8000 \
+    -v netmon-data:/app/data \
+    ghcr.io/vi2nano/netmon:latest
 ```
 
-Open your browser and navigate to `http://localhost:8000` to access the dashboard.
+Open `http://localhost:8000` in your browser. The image includes `ping` and
+`traceroute`, runs as a non-root user, and stores the database in `/app/data`.
 
-### Docker
+
+#### Build locally from the source
+
+Clone the repository and enter its directory:
+
+```bash
+git clone https://github.com/Vi2nano/NetMon.git
+cd NetMon
+```
 
 Build the image from the repository root:
 
 ```bash
-docker build -t netmon .
+docker build -t netmon:local .
 ```
 
 Run it with a persistent SQLite volume:
@@ -86,7 +94,7 @@ docker run -d \
     --restart unless-stopped \
     -p 8000:8000 \
     -v netmon-data:/app/data \
-    netmon
+    netmon:local
 ```
 
 Open `http://localhost:8000`. The image includes `ping` and `traceroute`,
@@ -100,7 +108,7 @@ docker run -d \
     --restart unless-stopped \
     --network host \
     -v netmon-data:/app/data \
-    netmon
+    netmon:local
 ```
 
 With host networking, access the dashboard at `http://localhost:8000` and do
