@@ -134,9 +134,10 @@ Distributed under the **GNU GPLv3 License**. See the `LICENSE` file in the root 
 <img width="1696" height="967" alt="Priorities" src="https://github.com/user-attachments/assets/14622018-3fa1-4053-8169-9951484b1783" />
 
 ## Example Settings/WebHook Entry
-<img width="1696" height="967" alt="Settings" src="https://github.com/user-attachments/assets/33013229-87f2-433d-8c47-92257f295a97" />
+<img width="996" height="975" alt="image" src="https://github.com/user-attachments/assets/4337273f-9994-46ea-95c4-24dd60f4d299" />
 
 ## Example Alerts
-<img width="2358" height="1148" alt="Screenshot From 2026-09-13 00-54-28" src="https://github.com/user-attachments/assets/0ba945c1-be12-4c78-a911-b099d70c5ca9" />
+<img width="2445" height="822" alt="image" src="https://github.com/user-attachments/assets/5452ce65-e3d4-42d6-955f-60abe42c8c41" />
+
 
 
