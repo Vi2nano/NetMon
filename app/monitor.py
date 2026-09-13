@@ -165,3 +165,20 @@ class MonitorEngine:
         elif not high_latency and "high_latency" in rt.active_conditions:
             rt.active_conditions.discard("high_latency")
             await self.alerts.resolve(device, "high_latency")
+
+        # Lightweight Async Port Checker
+        async def check_port(ip: str, port: int, timeout: float = 2.0) -> bool:
+            try:
+                await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+                return True
+            except Exception:
+                return False
+
+        # MTU Path MTU Discovery (PMTUD) worker tool
+        async def discover_mtu(ip: str) -> int:
+            # Linux alpine uses -M do to enforce Dont Fragment flags
+            # We can binary-search target packet sizes from 1500 down to 576
+            cmd = ["ping", "-c", "1", "-M", "do", "-s", "1472", ip]
+            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE)
+            await proc.communicate()
+            return 1500 if proc.returncode == 0 else 1492  # Example fallback logic

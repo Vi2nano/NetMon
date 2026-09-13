@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import ipaddress
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -79,9 +81,7 @@ async def lifespan(app: FastAPI):
     await engine.stop()
     await db.close()
 
-
 app = FastAPI(title="NetMon", lifespan=lifespan)
-
 
 # ---------------------------------------------------------------- schemas
 
@@ -112,6 +112,13 @@ class DeviceUpdate(BaseModel):
 class SettingIn(BaseModel):
     value: str
 
+
+class ScanPayload(BaseModel):
+    subnet: str  # Expects CIDR like "192.168.1.0/24"
+
+
+class PortCheckPayload(BaseModel):
+    port: int = Field(default=443, ge=1, le=65535)
 
 # ---------------------------------------------------------------- groups
 
@@ -181,6 +188,106 @@ async def device_history(device_id: int, hours: int = 24):
         raise HTTPException(404, "Device not found")
     return await db.history(device_id, hours=hours)
 
+
+@app.post("/api/discover")
+async def discover_subnet(payload: ScanPayload):
+    try:
+        # Validate the CIDR network input string
+        network = ipaddress.ip_network(payload.subnet, strict=False)
+    except ValueError:
+        raise HTTPException(400, "Invalid CIDR subnet format. Use e.g., 192.168.1.0/24")
+
+    # Limit maximum batch allocation size to prevent container network resource choking
+    if network.num_addresses > 256:
+        raise HTTPException(400, "Subnet scan range limited to /24 networks (256 IPs) at a time")
+
+    # Helper task for internal execution
+    async def ping_scan_host(ip: str) -> str | None:
+        cmd = ["ping", "-c", "1", "-W", "1", ip]
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL,
+                                                    stderr=asyncio.subprocess.DEVNULL)
+        await proc.communicate()
+        return ip if proc.returncode == 0 else None
+
+    # Run sweeps concurrently using async pools
+    tasks = [ping_scan_host(str(host)) for host in network.hosts()]
+    results = await asyncio.gather(*tasks)
+
+    discovered_hosts = [ip for ip in results if ip is not None]
+    return {"hosts": discovered_hosts}
+
+
+# ---------------------------------------------------------------- devices manual actions
+
+@app.post("/api/devices/{device_id}/action/traceroute")
+async def action_traceroute(device_id: int):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+
+    target = device["ip_address"]
+    # Run the native Alpine traceroute utility asynchronously
+    # -w 1 limits hop timeout to 1 sec, -q 1 sends one packet per hop to speed it up
+    proc = await asyncio.create_subprocess_exec(
+        "traceroute", "-w", "1", "-q", "1", target,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    return {
+        "ok": proc.returncode == 0,
+        "output": stdout.decode(errors="replace") or stderr.decode(errors="replace")
+    }
+
+
+@app.post("/api/devices/{device_id}/action/mtu")
+async def action_mtu(device_id: int):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+
+    target = device["ip_address"]
+    # Linux ping: -M do sets Dont Fragment bit, -s sets payload size
+    # 1472 bytes payload + 28 bytes ICMP/IP headers = 1500 byte standard frame
+    cmd = ["ping", "-c", "1", "-M", "do", "-s", "1472", "-W", "1", target]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await proc.communicate()
+
+    if proc.returncode == 0:
+        return {"ok": True, "mtu": 1500, "output": "Standard 1500 MTU verified successfully (DF bit unfragmented)."}
+
+    # Fallback sweep boundary test check if 1500 drops
+    fallback_cmd = ["ping", "-c", "1", "-M", "do", "-s", "1464", "-W", "1", target]
+    fb_proc = await asyncio.create_subprocess_exec(*fallback_cmd)
+    await fb_proc.communicate()
+
+    if fb_proc.returncode == 0:
+        return {"ok": True, "mtu": 1492,
+                "output": "Detected 1492 MTU (Consistent with local PPPoE WAN framing encapsulation boundaries)."}
+
+    return {"ok": False, "mtu": None,
+            "output": "Path MTU check dropped packets or host is blocking fragmented diagnostic sweeps entirely."}
+
+
+@app.post("/api/devices/{device_id}/action/portcheck")
+async def action_portcheck(device_id: int, payload: PortCheckPayload):
+    device = await db.get_device(device_id)
+    if not device:
+        raise HTTPException(404, "Device not found")
+
+    target = device["ip_address"]
+    try:
+        # Avoid subprocess overhead; cleanly map using native async socket descriptors
+        conn = asyncio.open_connection(target, payload.port)
+        await asyncio.wait_for(conn, timeout=2.0)
+        return {"ok": True, "output": f"Port {payload.port} is OPEN and actively listening."}
+    except Exception as e:
+        return {"ok": False, "output": f"Port {payload.port} is CLOSED or filtered. Reason: {type(e).__name__}"}
 
 # ---------------------------------------------------------------- alerts
 

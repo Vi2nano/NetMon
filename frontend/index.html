@@ -96,6 +96,19 @@
   .empty-state{text-align:center;padding:70px 20px;color:var(--muted);}
   .empty-state h3{color:var(--text);margin-bottom:6px;font-weight:600;}
 
+  .device-actions-row { display: flex; gap: 6px; align-items: center; margin-top: 5px; }
+  .btn-action-tab { padding: 4px 8px; font-size: 0.75rem; background: #2d2d35; border: 1px solid #444; border-radius: 4px; color: #ccc; cursor: pointer; }
+  .btn-action-tab:hover { background: #3e3e48; color: #fff; }
+  .port-check-trigger { display: flex; align-items: center; gap: 3px; }
+  .mini-port-input { width: 45px; font-size: 0.75rem; padding: 3px; background: #18181c; border: 1px solid #444; color: #fff; border-radius: 4px; text-align: center; }
+
+  /* Details Tray Terminal Styling */
+  .tray-diagnostic-box { margin-top: 15px; border-top: 1px solid #333; padding-top: 15px; }
+  .tray-diagnostic-box h4 { margin: 0 0 8px 0; color: #aaa; font-size: 0.85rem; text-transform: uppercase; }
+  .terminal-log { background: #0c0c0f; border: 1px solid #222; border-radius: 6px; padding: 12px; color: #39ff14; font-family: monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap; max-height: 200px; }
+  .hidden-loader { display: none; }
+  .faded-text { opacity: 0.5; }
+
   /* ---------- modal / drawer ---------- */
   .overlay{position:fixed;inset:0;background:rgba(6,9,11,0.6);display:none;align-items:center;justify-content:center;z-index:50;}
   .overlay.open{display:flex;}
@@ -137,6 +150,32 @@
   .toast{background:var(--panel-2);border:1px solid var(--border);border-left:3px solid var(--info);padding:10px 14px;border-radius:6px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.3);}
   .toast.crit{border-left-color:var(--crit);}
   .toast.up{border-left-color:var(--up);}
+
+  /* Drawer Base Animation Trackers */
+.drawer {
+    position: fixed;
+    top: 0;
+    right: -450px; /* Hidden out of bounds by default */
+    width: 400px;
+    height: 100%;
+    background: #1e1e24; /* Styled dark to match standard dark dashboards */
+    box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+    transition: right 0.3s ease-in-out;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    color: #ffffff;
+}
+.drawer.open {
+    right: 0;
+}
+.drawer-header { padding: 20px; border-bottom: 1px solid #2d2d35; display: flex; justify-content: space-between; align-items: center; }
+.drawer-body { padding: 20px; flex: 1; overflow-y: auto; }
+.drawer-footer { padding: 20px; border-top: 1px solid #2d2d35; background: #18181c; }
+.staging-area { margin-top: 20px; }
+.discovered-item { display: flex; align-items: center; padding: 10px; background: #2a2a32; margin-bottom: 8px; border-radius: 4px; }
+.discovered-item input { margin-right: 12px; transform: scale(1.2); }
+.hidden { display: none !important; }
 
   @media (max-width: 760px){
     #app{grid-template-columns:1fr;}
@@ -278,7 +317,38 @@
     <div class="chart-wrap"><h4>Latency &amp; jitter over time</h4><canvas id="chart-latency" height="140"></canvas></div>
     <div class="chart-wrap"><h4>Packet loss over time</h4><canvas id="chart-loss" height="100"></canvas></div>
   </div>
+    <div id="tray-diagnostic-section" class="tray-diagnostic-box">
+      <h4>🛠️ Live Diagnostics Output</h4>
+      <div id="diagnostic-loader" class="hidden-loader">Running network operation...</div>
+      <pre id="diagnostic-terminal-output" class="terminal-log">Select a manual check rule above to see deep diagnostic telemetry...</pre>
+    </div>
 </div>
+
+<!-- Floating Action Navigation Item -->
+<button id="open-discovery-btn" class="btn btn-secondary">📡 Discovery</button>
+
+<!-- Slide-Out Overlay Drawer Container -->
+<div id="discovery-drawer" class="drawer">
+    <div class="drawer-header">
+        <h2>Network Subnet Discovery</h2>
+        <button id="close-discovery-btn" class="close-btn">&times;</button>
+    </div>
+    <div class="drawer-body">
+        <div class="input-group">
+            <input type="text" id="scan-subnet-input" placeholder="e.g., 192.168.1.1/24" class="form-input">
+            <button id="start-scan-btn" class="btn btn-primary">Scan Range</button>
+        </div>
+
+        <!-- Interactive Staging Checklist Area -->
+        <div id="scan-results-container" class="staging-area">
+            <p class="placeholder-text">Enter a subnet range and run a scan to find active network nodes...</p>
+        </div>
+    </div>
+    <div class="drawer-footer hidden" id="drawer-actions">
+        <button id="add-selected-btn" class="btn btn-success">Monitor Selected (<span id="selected-count">0</span>)</button>
+    </div>
+</div>
+
 
 <div class="toast-stack" id="toast-stack"></div>
 
@@ -338,6 +408,14 @@ function deviceRow(d){
       <div class="row-actions">
         <button class="icon-sm" data-edit="${d.id}" title="Edit">✎</button>
         <button class="icon-sm" data-delete="${d.id}" title="Delete">🗑</button>
+      </div>
+      <div class="device-actions-row">
+      <button class="btn-action-tab" onclick="runDiagnostic(${device.id}, 'traceroute')">🗺️ Trace</button>
+      <button class="btn-action-tab" onclick="runDiagnostic(${device.id}, 'mtu')">📦 MTU</button>
+        <div class="port-check-trigger">
+          <input type="number" id="port-val-${device.id}" value="80" class="mini-port-input" min="1" max="65535">
+          <button class="btn-action-tab" onclick="runPortCheck(${device.id})">🔌 Port</button>
+        </div>
       </div>
     </td>
   </tr>`;
@@ -628,8 +706,130 @@ function chartOptions(){
     }
   };
 }
+async function runDiagnostic(deviceId, actionType) {
+    const terminal = document.getElementById('diagnostic-terminal-output');
+    const loader = document.getElementById('diagnostic-loader');
 
-// ---------------- boot ----------------
+    // Ensure the device details tray is open before appending
+    // openDetailsTray(deviceId);
+
+    terminal.classList.add('faded-text');
+    if (loader) loader.classList.remove('hidden-loader');
+    terminal.innerText = `Initializing ${actionType.toUpperCase()} loop sweep...`;
+
+    try {
+        const res = await fetch(`/api/devices/${deviceId}/action/${actionType}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (actionType === 'mtu') {
+            terminal.innerText = `[Result]: ${data.output}\n\nDetermined Optimal Maximum Transmission Unit: ${data.mtu || 'Unknown'}`;
+        } else {
+            terminal.innerText = data.output || "Operation finished with no console output returned.";
+        }
+    } catch (err) {
+        terminal.innerText = `Execution Failure: Failed to communicate with monitoring node endpoint. (${err.message})`;
+    } finally {
+        if (loader) loader.classList.add('hidden-loader');
+        terminal.classList.remove('faded-text');
+    }
+}
+
+async function runPortCheck(deviceId) {
+    const portField = document.getElementById(`port-val-${deviceId}`);
+    const targetPort = parseInt(portField.value) || 80;
+    const terminal = document.getElementById('diagnostic-terminal-output');
+    const loader = document.getElementById('diagnostic-loader');
+
+    if (loader) loader.classList.remove('hidden-loader');
+    terminal.innerText = `Testing connection handshake over TCP Port ${targetPort}...`;
+
+    try {
+        const res = await fetch(`/api/devices/${deviceId}/action/portcheck`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ port: targetPort })
+        });
+        const data = await res.json();
+        terminal.innerText = `[Port Security Scan Report]:\n${data.output}`;
+    } catch (err) {
+        terminal.innerText = `Connection execution engine dropped checking stack framework rules: ${err.message}`;
+    } finally {
+        if (loader) loader.classList.add('hidden-loader');
+    }
+}
+
+// ---------------- discovery drawer ----------------
+// Toggle Drawer Views
+const drawer = document.getElementById('discovery-drawer');
+document.getElementById('open-discovery-btn').addEventListener('click', () => drawer.classList.add('open'));
+document.getElementById('close-discovery-btn').addEventListener('click', () => drawer.classList.remove('open'));
+
+// Trigger Asynchronous Background Subnet Check
+document.getElementById('start-scan-btn').addEventListener('click', async () => {
+    const subnet = document.getElementById('scan-subnet-input').value;
+    const container = document.getElementById('scan-results-container');
+
+    container.innerHTML = '<div class="loader">Sweeping network blocks, please wait...</div>';
+
+    try {
+        const res = await fetch('/api/discover', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ subnet })
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.detail || 'Scan failed');
+
+        if (data.hosts.length === 0) {
+            container.innerHTML = '<p class="no-hosts">No responding hosts discovered in this range.</p>';
+            document.getElementById('drawer-actions').classList.add('hidden');
+            return;
+        }
+
+        // Render targets inside checkboxes
+        container.innerHTML = data.hosts.map(ip => `
+            <label class="discovered-item">
+                <input type="checkbox" class="scan-checkbox" value="${ip}" onchange="updateSelectedCount()">
+                <span>${ip}</span>
+            </label>
+        `).join('');
+
+        document.getElementById('drawer-actions').classList.remove('hidden');
+        updateSelectedCount();
+    } catch (err) {
+        container.innerHTML = `<p class="error-text">${err.message}</p>`;
+    }
+});
+
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.scan-checkbox:checked').length;
+    document.getElementById('selected-count').innerText = checked;
+}
+
+// Bulk Add Monitored Targets From Staging List
+document.getElementById('add-selected-btn').addEventListener('click', async () => {
+    const checkboxes = document.querySelectorAll('.scan-checkbox:checked');
+    for (const cb of checkboxes) {
+        const ip = cb.value;
+        // Post directly to your verified main API channel
+        await fetch('/api/devices', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: `Discovered Host (${ip})`,
+                ip_address: ip,
+                priority: "normal",
+                enabled: true,
+                latency_threshold_ms: 200,
+                loss_threshold_pct: 20.0
+            })
+        });
+    }
+    drawer.classList.remove('open');
+    // Refresh your main dashboard tracking grid layout view automatically here
+    if (typeof loadDevices === 'function') loadDevices();
+});
 
 loadAll();
 connectWS();
