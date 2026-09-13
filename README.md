@@ -127,6 +127,9 @@ Distributed under the **GNU GPLv3 License**. See the `LICENSE` file in the root 
 ## Example Main Overview
 <img width="1542" height="650" alt="MainOverview" src="https://github.com/user-attachments/assets/f3095a15-fe42-4ded-b09c-26c150637d19" />
 
+## Example Device Flyout/Manual Testing
+<img width="606" height="1308" alt="image" src="https://github.com/user-attachments/assets/d40ab4d0-107c-4a22-a323-825b83884d50" />
+
 ## Example Add Device
 <img width="1602" height="886" alt="AddDevice" src="https://github.com/user-attachments/assets/cca76e71-ce74-4aba-ab74-92ad2dbf2152" />
 
