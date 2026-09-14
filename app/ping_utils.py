@@ -216,7 +216,7 @@ _RTT_TOKEN_RE = re.compile(r"([\d.]+)\s*ms")
 def _build_traceroute_command(ip: str, max_hops: int, timeout_s: float) -> list[str]:
     if _IS_WINDOWS:
         return ["tracert", "-h", str(max_hops), "-w", str(int(timeout_s * 1000)), ip]
-    return ["traceroute", "-m", str(max_hops), "-w", str(max(1, int(round(timeout_s)))), ip]
+    return ["traceroute", "-I", "-m", str(max_hops), "-w", str(max(1, int(round(timeout_s)))), ip]
 
 
 def _parse_traceroute_output(output: str) -> list[dict]:

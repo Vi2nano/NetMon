@@ -66,6 +66,8 @@ class DeviceRuntime:
         # rule_id -> {"active": bool, "last_fired": float epoch seconds}
         self.rule_states: dict[int, dict] = {}
         self.task: Optional[asyncio.Task] = None
+        # Track consecutive high-latency pings for latency_alert_consecutive_packets feature
+        self.consecutive_high_latency_count = 0
 
     def stats(self) -> dict:
         entries = list(self.window)
@@ -278,13 +280,32 @@ class MonitorEngine:
             await self.alerts.resolve(device, "high_loss")
 
         latency_threshold = device.get("latency_threshold_ms", 200)
-        high_latency = stats["latency_ms"] is not None and stats["latency_ms"] >= latency_threshold
+        consecutive_packets_threshold = device.get("latency_alert_consecutive_packets", 1)
+        
+        # Check for consecutive high-latency pings
+        entries = list(rt.window)
+        consecutive_high_latency = 0
+        # Count backwards from the most recent entry
+        for entry in reversed(entries):
+            if entry[1]:  # success
+                if entry[2] is not None and entry[2] >= latency_threshold:
+                    consecutive_high_latency += 1
+                else:
+                    # Broken sequence - stop counting
+                    break
+            else:
+                # Ping failed - stop counting
+                break
+        
+        high_latency = consecutive_high_latency >= consecutive_packets_threshold
+        
         if high_latency and "high_latency" not in rt.active_conditions:
             rt.active_conditions.add("high_latency")
-            await self.alerts.fire(
-                device, "high_latency",
-                f"{device['name']} latency at {stats['latency_ms']:.0f}ms (threshold {latency_threshold}ms)",
-            )
+            if consecutive_packets_threshold == 1:
+                message = f"{device['name']} latency at {stats['latency_ms']:.0f}ms (threshold {latency_threshold}ms)"
+            else:
+                message = f"{device['name']} latency at {stats['latency_ms']:.0f}ms (threshold {latency_threshold}ms for {consecutive_packets_threshold} consecutive packets)"
+            await self.alerts.fire(device, "high_latency", message)
         elif not high_latency and "high_latency" in rt.active_conditions:
             rt.active_conditions.discard("high_latency")
             await self.alerts.resolve(device, "high_latency")
