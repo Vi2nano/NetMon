@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .alerts import WEBHOOK_PROVIDERS, AlertManager
 from .database import PRIORITIES, RULE_METRICS, RULE_OPERATORS, RULE_SCOPE_TYPES, Database
+from .export_import import ExportImport
 from .monitor import MonitorEngine
 from .ping_utils import discover_path_mtu, ping_once, run_traceroute, tcp_port_check
 
@@ -165,6 +166,11 @@ class RuleUpdate(BaseModel):
     port: Optional[int] = None
     cooldown_minutes: Optional[int] = None
     enabled: Optional[bool] = None
+
+
+class ImportPayload(BaseModel):
+    config: dict
+    mode: str = "merge"  # "merge" or "replace"
 
 
 def _validate_rule(payload: dict):
@@ -409,6 +415,47 @@ async def set_webhook_provider(payload: SettingIn):
         )
     await db.set_setting("webhook_provider", payload.value)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- import/export
+
+@app.get("/api/export/config")
+async def export_config():
+    """Export all configuration (groups, devices, ports, alert rules) as JSON."""
+    try:
+        config = await ExportImport.export_config(db)
+        return config
+    except Exception as e:
+        raise HTTPException(500, f"Export failed: {e}")
+
+
+@app.post("/api/import/config")
+async def import_config(payload: ImportPayload):
+    """Import configuration from JSON.
+    
+    Modes:
+    - "merge": Add new items, skip existing ones (default)
+    - "replace": Delete all existing config and import fresh
+    """
+    try:
+        if payload.mode not in ("merge", "replace"):
+            raise HTTPException(400, "mode must be 'merge' or 'replace'")
+        
+        stats = await ExportImport.import_config(db, payload.config, payload.mode)
+        
+        # Reload monitor engine with new configuration
+        await engine.reload_rules()
+        for device in await db.list_devices():
+            await engine.add_device(device)
+        
+        return {
+            "ok": True,
+            "stats": stats,
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Import failed: {e}")
 
 
 # ---------------------------------------------------------------- websocket
