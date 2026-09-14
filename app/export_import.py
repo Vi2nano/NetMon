@@ -31,6 +31,10 @@ class ExportImport:
         ports = await db.list_ports()  # All ports
         rules = await db.list_rules()
 
+        # Build maps for group and device lookups
+        group_id_to_name = {g["id"]: g["name"] for g in groups}
+        device_id_to_name = {d["id"]: d["name"] for d in devices}
+
         return {
             "version": "1.0",
             "exported_at": datetime.utcnow().isoformat(),
@@ -44,7 +48,7 @@ class ExportImport:
                 {
                     "name": d["name"],
                     "ip_address": d["ip_address"],
-                    "group_name": None,  # Will be filled below
+                    "group_name": group_id_to_name.get(d["group_id"]),
                     "priority": d["priority"],
                     "enabled": bool(d["enabled"]),
                     "latency_threshold_ms": d["latency_threshold_ms"],
@@ -55,7 +59,7 @@ class ExportImport:
             ],
             "ports": [
                 {
-                    "device_name": None,  # Will be filled below
+                    "device_name": device_id_to_name.get(p["device_id"]),
                     "port": p["port"],
                     "label": p["label"],
                     "enabled": bool(p["enabled"]),
@@ -66,7 +70,13 @@ class ExportImport:
                 {
                     "name": r["name"],
                     "scope_type": r["scope_type"],
-                    "scope_id_name": None,  # Will be filled below
+                    "scope_id_name": (
+                        group_id_to_name.get(r["scope_id"])
+                        if r["scope_type"] == "group"
+                        else device_id_to_name.get(r["scope_id"])
+                        if r["scope_type"] == "device"
+                        else None
+                    ),
                     "metric": r["metric"],
                     "operator": r["operator"],
                     "threshold": r["threshold"],
