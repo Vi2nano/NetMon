@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS devices (
     enabled INTEGER NOT NULL DEFAULT 1,
     latency_threshold_ms INTEGER NOT NULL DEFAULT 200,
     loss_threshold_pct REAL NOT NULL DEFAULT 20,
+    latency_alert_consecutive_packets INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -95,7 +96,19 @@ class Database:
         await self.conn.execute("PRAGMA journal_mode=WAL;")
         await self.conn.execute("PRAGMA foreign_keys=ON;")
         await self.conn.executescript(SCHEMA)
+        await self._run_migrations()
         await self.conn.commit()
+
+    async def _run_migrations(self):
+        """Apply any schema migrations needed for existing databases."""
+        # Migration: add latency_alert_consecutive_packets column if it doesn't exist
+        try:
+            await self.conn.execute(
+                "ALTER TABLE devices ADD COLUMN latency_alert_consecutive_packets INTEGER NOT NULL DEFAULT 1"
+            )
+        except aiosqlite.OperationalError:
+            # Column already exists, which is fine
+            pass
 
     async def close(self):
         if self.conn:
@@ -138,8 +151,8 @@ class Database:
     async def create_device(self, data: dict) -> dict:
         cur = await self.conn.execute(
             """INSERT INTO devices
-               (name, ip_address, group_id, priority, enabled, latency_threshold_ms, loss_threshold_pct)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (name, ip_address, group_id, priority, enabled, latency_threshold_ms, loss_threshold_pct, latency_alert_consecutive_packets)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["name"],
                 data["ip_address"],
@@ -148,6 +161,7 @@ class Database:
                 int(data.get("enabled", True)),
                 data.get("latency_threshold_ms", 200),
                 data.get("loss_threshold_pct", 20),
+                data.get("latency_alert_consecutive_packets", 1),
             ),
         )
         await self.conn.commit()
@@ -160,7 +174,7 @@ class Database:
         merged = {**existing, **data}
         await self.conn.execute(
             """UPDATE devices SET name=?, ip_address=?, group_id=?, priority=?,
-               enabled=?, latency_threshold_ms=?, loss_threshold_pct=? WHERE id=?""",
+               enabled=?, latency_threshold_ms=?, loss_threshold_pct=?, latency_alert_consecutive_packets=? WHERE id=?""",
             (
                 merged["name"],
                 merged["ip_address"],
@@ -169,6 +183,7 @@ class Database:
                 int(merged["enabled"]),
                 merged["latency_threshold_ms"],
                 merged["loss_threshold_pct"],
+                merged["latency_alert_consecutive_packets"],
                 device_id,
             ),
         )

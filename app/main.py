@@ -112,6 +112,7 @@ class DeviceIn(BaseModel):
     enabled: bool = True
     latency_threshold_ms: int = Field(default=200, ge=1)
     loss_threshold_pct: float = Field(default=20, ge=0, le=100)
+    latency_alert_consecutive_packets: int = Field(default=1, ge=1)
 
 
 class DeviceUpdate(BaseModel):
@@ -122,6 +123,7 @@ class DeviceUpdate(BaseModel):
     enabled: Optional[bool] = None
     latency_threshold_ms: Optional[int] = None
     loss_threshold_pct: Optional[float] = None
+    latency_alert_consecutive_packets: Optional[int] = None
 
 
 class SettingIn(BaseModel):
