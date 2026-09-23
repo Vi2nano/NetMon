@@ -213,10 +213,39 @@ _IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 _RTT_TOKEN_RE = re.compile(r"([\d.]+)\s*ms")
 
 
-def _build_traceroute_command(ip: str, max_hops: int, timeout_s: float) -> list[str]:
+def _build_traceroute_command(ip: str, max_hops: int, timeout_s: float, mode: str = "udp") -> list[str]:
     if _IS_WINDOWS:
         return ["tracert", "-h", str(max_hops), "-w", str(int(timeout_s * 1000)), ip]
-    return ["traceroute", "-I", "-m", str(max_hops), "-w", str(max(1, int(round(timeout_s)))), ip]
+    cmd = ["traceroute", "-m", str(max_hops), "-w", str(max(1, int(round(timeout_s))))]
+    if mode == "icmp":
+        cmd.append("-I")
+    elif mode == "tcp":
+        cmd.extend(["-T", "-p", "80"])
+    cmd.append(ip)
+    return cmd
+
+
+def _count_intermediate_non_timeouts(hops: list[dict]) -> int:
+    if len(hops) <= 2:
+        return 0
+    return sum(1 for hop in hops[1:-1] if not hop["timeout"])
+
+
+def _is_first_last_only_trace(hops: list[dict]) -> bool:
+    if len(hops) < 3:
+        return False
+    return (
+        not hops[0]["timeout"]
+        and not hops[-1]["timeout"]
+        and all(hop["timeout"] for hop in hops[1:-1])
+    )
+
+
+def _trace_score(hops: list[dict]) -> tuple[int, int]:
+    return (
+        _count_intermediate_non_timeouts(hops),
+        sum(1 for hop in hops if not hop["timeout"]),
+    )
 
 
 def _parse_traceroute_output(output: str) -> list[dict]:
@@ -253,11 +282,33 @@ async def run_traceroute(ip: str, max_hops: int = 20) -> dict:
     in slim Docker base images) instead of letting the exception propagate
     into a bare 500 error.
     """
-    cmd = _build_traceroute_command(ip, max_hops, timeout_s=2.0)
-    try:
+    async def _attempt(mode: str) -> dict:
+        cmd = _build_traceroute_command(ip, max_hops, timeout_s=2.0, mode=mode)
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=max_hops * 3 + 10)
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+            return {"timed_out": True, "hops": [], "stderr": "", "output": ""}
+
+        output = stdout.decode(errors="ignore")
+        return {
+            "timed_out": False,
+            "hops": _parse_traceroute_output(output),
+            "stderr": stderr.decode(errors="ignore").strip(),
+            "output": output,
+        }
+
+    modes = ["windows"] if _IS_WINDOWS else ["udp", "tcp"]
+    attempts = []
+    try:
+        first = await _attempt(modes[0])
     except FileNotFoundError:
         tool = "tracert" if _IS_WINDOWS else "traceroute"
         return {
@@ -269,20 +320,15 @@ async def run_traceroute(ip: str, max_hops: int = 20) -> dict:
                 f"or `apk add traceroute` (Alpine)."
             ),
         }
+    attempts.append(first)
 
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=max_hops * 3 + 10)
-    except asyncio.TimeoutError:
-        proc.kill()
-        try:
-            await proc.wait()
-        except Exception:
-            pass
+    if not _IS_WINDOWS and (_is_first_last_only_trace(first["hops"]) or not first["hops"]):
+        attempts.append(await _attempt(modes[1]))
+
+    best = max(attempts, key=lambda a: _trace_score(a["hops"]))
+    if best["hops"]:
+        return {"ok": True, "hops": best["hops"], "output": _format_hops_as_text(best["hops"])}
+    if any(a["timed_out"] for a in attempts):
         return {"ok": False, "hops": [], "output": "Traceroute timed out."}
-
-    output = stdout.decode(errors="ignore")
-    hops = _parse_traceroute_output(output)
-    if not hops:
-        err = stderr.decode(errors="ignore").strip()
-        return {"ok": False, "hops": [], "output": err[:500] if err else "No hops were returned."}
-    return {"ok": True, "hops": hops, "output": _format_hops_as_text(hops)}
+    err = next((a["stderr"] for a in attempts if a["stderr"]), "")
+    return {"ok": False, "hops": [], "output": err[:500] if err else "No hops were returned."}

@@ -114,6 +114,14 @@ docker run -d \
 With host networking, access the dashboard at `http://localhost:8000` and do
 not also publish `-p 8000:8000`.
 
+> **Traceroute note (Docker Desktop on Windows):** Docker Desktop routes Linux
+> containers through a Hyper-V/WSL2 NAT layer, which can suppress intermediate
+> ICMP time-exceeded replies. In that setup, traceroute may only show the first
+> hop and destination. NetMon now retries traceroute with a TCP probe mode when
+> this pattern is detected, but full hop visibility may still be limited by the
+> host networking layer. On Linux hosts, `--network host` can improve
+> traceroute/discovery fidelity.
+
 ---
 
 ## ⚙️ Configuration & API Usage
@@ -149,6 +157,5 @@ Distributed under the **GNU GPLv3 License**. See the `LICENSE` file in the root 
 
 ## Example Alerts
 <img width="2445" height="822" alt="image" src="https://github.com/user-attachments/assets/5452ce65-e3d4-42d6-955f-60abe42c8c41" />
-
 
 
