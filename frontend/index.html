@@ -321,7 +321,13 @@
 
 <!-- Alerts drawer -->
 <div class="drawer" id="alerts-drawer">
-  <div class="drawer-header"><h2>Alerts</h2><button class="icon-sm" id="close-alerts">✕</button></div>
+  <div class="drawer-header">
+    <h2>Alerts</h2>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button class="icon-sm" id="mark-alerts-read">Mark all read</button>
+      <button class="icon-sm" id="close-alerts">✕</button>
+    </div>
+  </div>
   <div class="drawer-body" id="alerts-body"></div>
 </div>
 
@@ -610,20 +616,44 @@ function setWsStatus(live){
 }
 
 function onNewAlert(alert){
-  refreshAlertBadge();
+  if (document.getElementById('alerts-drawer').classList.contains('open')) loadAlerts();
+  else refreshAlertBadge();
   const t = document.createElement('div');
   const cls = /down$/.test(alert.type) ? 'crit' : (/recovered$/.test(alert.type) ? 'up' : '');
   t.className = 'toast ' + cls;
   t.textContent = alert.message;
   document.getElementById('toast-stack').appendChild(t);
   setTimeout(() => t.remove(), 6000);
-  if (document.getElementById('alerts-drawer').classList.contains('open')) loadAlerts();
 }
 
-async function refreshAlertBadge(){
-  const unresolved = await api('/api/alerts?unresolved_only=true');
+const LAST_VIEWED_ALERT_ID_KEY = 'netmon:lastViewedAlertId';
+function getLastViewedAlertId(){
+  try {
+    const n = Number(localStorage.getItem(LAST_VIEWED_ALERT_ID_KEY) || '0');
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch(_) {
+    return 0;
+  }
+}
+function getLatestAlertId(alerts){
+  return alerts.reduce((maxId, a) => Math.max(maxId, Number(a.id) || 0), 0);
+}
+function setLastViewedAlertId(alertId){
+  try {
+    localStorage.setItem(LAST_VIEWED_ALERT_ID_KEY, String(Math.max(0, Number(alertId) || 0)));
+  } catch(_) {}
+}
+function markAlertsViewed(alerts){
+  const latest = getLatestAlertId(alerts);
+  if (latest) setLastViewedAlertId(latest);
+}
+
+async function refreshAlertBadge(alerts = null){
+  const allAlerts = alerts || await api('/api/alerts');
+  const lastViewedAlertId = getLastViewedAlertId();
+  const unviewedCount = allAlerts.filter(a => (Number(a.id) || 0) > lastViewedAlertId).length;
   const badge = document.getElementById('alert-badge');
-  if (unresolved.length) { badge.style.display=''; badge.textContent = unresolved.length; }
+  if (unviewedCount) { badge.style.display=''; badge.textContent = unviewedCount; }
   else badge.style.display = 'none';
 }
 
@@ -709,9 +739,16 @@ document.getElementById('search').addEventListener('input', (e) => { state.searc
 const alertsDrawer = document.getElementById('alerts-drawer');
 document.getElementById('open-alerts').onclick = () => { alertsDrawer.classList.add('open'); loadAlerts(); };
 document.getElementById('close-alerts').onclick = () => alertsDrawer.classList.remove('open');
+document.getElementById('mark-alerts-read').onclick = async () => {
+  const alerts = await api('/api/alerts');
+  markAlertsViewed(alerts);
+  refreshAlertBadge(alerts);
+};
 
 async function loadAlerts(){
   const alerts = await api('/api/alerts');
+  markAlertsViewed(alerts);
+  refreshAlertBadge(alerts);
   const body = document.getElementById('alerts-body');
   if (!alerts.length) { body.innerHTML = `<div class="empty-state"><h3>No alerts yet</h3><div>You'll see device outages and threshold breaches here.</div></div>`; return; }
   body.innerHTML = alerts.map(a => `
