@@ -11,6 +11,7 @@ NetMon provides real-time latency, packet loss metrics, and instant alert handli
 - **Unified Widgets Homepage:** `GET /` now serves a dark-themed launcher dashboard with tiles for NetMon and supporting network operations widgets, including a live-updating NetMon health summary.
 - **Zero Bloat Monitoring:** Keep tabs on hostnames, raw IP addresses, public DNS targets (like `8.8.8.8` and `1.1.1.1`), or local gateway routing without dealing with complicated agent installations.
 - **Real-Time Data Streaming:** Leverages WebSockets to push live snapshots, latency statistics, and diagnostic metrics directly to your browser instantly—no manual refreshing required.
+- **Adaptive Outage Polling:** Endpoints marked down are automatically escalated to critical polling (5s), then step back through 15s and 30s before returning to their configured interval after recovery.
 - **Fail-Safe Target Validation:** When adding a new device, NetMon performs an isolated HTTP handshake checking for reachability, parsing clean hostnames/IPs automatically while ensuring that non-web assets (like pure ICMP nodes) are still safely registered.
 - **Self-Healing Database Management:** Auto-seeds default deletable testing endpoints on its first run if the environment is empty, and runs an asynchronous background pruning routine every 6 hours to clear historical logs older than 30 days.
 - **Custom Threshold Alerts & Webhooks:** Configurable latency thresholds (ms) and packet loss parameters (%) per device to dispatch system logs and trigger external communication streams.

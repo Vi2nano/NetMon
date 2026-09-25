@@ -26,6 +26,7 @@ PRIORITY_INTERVALS = {
     "normal": 60,
     "low": 300,
 }
+RECOVERY_RAMP_INTERVALS = (15, 30)
 
 WINDOW_SIZE = 20            # rolling samples kept in memory per device/port for live stats
 DOWN_AFTER_FAILS = 3        # consecutive failed pings before a device is marked "down"
@@ -68,6 +69,11 @@ class DeviceRuntime:
         self.task: Optional[asyncio.Task] = None
         # Track consecutive high-latency pings for latency_alert_consecutive_packets feature
         self.consecutive_high_latency_count = 0
+        # Dynamic polling interval behavior:
+        # - force 5s while down
+        # - after recovery, step 15s -> 30s -> configured baseline
+        self.recovery_intervals: deque[int] = deque()
+        self.recovery_interval_override: Optional[int] = None
 
     def stats(self) -> dict:
         entries = list(self.window)
@@ -176,7 +182,6 @@ class MonitorEngine:
         return [rt.stats() for rt in self.runtimes.values()]
 
     async def _poll_loop(self, rt: DeviceRuntime):
-        interval = PRIORITY_INTERVALS.get(rt.device["priority"], 60)
         consecutive_errors = 0
         try:
             while True:
@@ -203,12 +208,37 @@ class MonitorEngine:
                     )
                     # Back off a little if it's failing repeatedly, so a
                     # persistent problem (e.g. DB locked) doesn't spin hot.
-                    await asyncio.sleep(min(interval, 5 * min(consecutive_errors, 6)))
+                    await asyncio.sleep(min(self._current_interval(rt), 5 * min(consecutive_errors, 6)))
                     continue
 
-                await asyncio.sleep(interval)
+                await asyncio.sleep(self._current_interval(rt))
         except asyncio.CancelledError:
             pass
+
+    @staticmethod
+    def _base_interval(rt: DeviceRuntime) -> int:
+        return PRIORITY_INTERVALS.get(rt.device["priority"], 60)
+
+    def _current_interval(self, rt: DeviceRuntime) -> int:
+        if rt.is_down:
+            return PRIORITY_INTERVALS["critical"]
+        if rt.recovery_interval_override is not None:
+            return rt.recovery_interval_override
+        return self._base_interval(rt)
+
+    def _start_recovery_ramp(self, rt: DeviceRuntime):
+        base_interval = self._base_interval(rt)
+        ramp = [step for step in RECOVERY_RAMP_INTERVALS if step < base_interval]
+        ramp.append(base_interval)
+        rt.recovery_intervals = deque(ramp)
+        rt.recovery_interval_override = rt.recovery_intervals.popleft()
+
+    def _advance_recovery_ramp(self, rt: DeviceRuntime):
+        if not rt.recovery_intervals:
+            rt.recovery_interval_override = None
+            return
+        next_interval = rt.recovery_intervals.popleft()
+        rt.recovery_interval_override = None if next_interval == self._base_interval(rt) else next_interval
 
     async def _check_device(self, rt: DeviceRuntime):
         result = await ping_once(rt.device["ip_address"])
@@ -217,6 +247,8 @@ class MonitorEngine:
         if result.success:
             rt.consecutive_fail = 0
             rt.consecutive_success += 1
+            if not rt.is_down and rt.recovery_interval_override is not None:
+                self._advance_recovery_ramp(rt)
         else:
             rt.consecutive_fail += 1
             rt.consecutive_success = 0
@@ -226,11 +258,14 @@ class MonitorEngine:
         device = rt.device
         if rt.consecutive_fail >= DOWN_AFTER_FAILS and not rt.is_down:
             rt.is_down = True
+            rt.recovery_intervals.clear()
+            rt.recovery_interval_override = None
             await self.alerts.fire(
                 device, "down", f"{device['name']} ({device['ip_address']}) is not responding"
             )
         elif rt.is_down and rt.consecutive_success >= 1:
             rt.is_down = False
+            self._start_recovery_ramp(rt)
             await self.alerts.resolve(device, "down")
             await self.alerts.fire(
                 device, "recovered", f"{device['name']} ({device['ip_address']}) is back online"
