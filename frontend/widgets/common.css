@@ -43,6 +43,10 @@ button.secondary{background:var(--panel);color:var(--text);border-color:var(--bo
 .error{margin-top:10px;padding:10px 12px;border-radius:7px;background:var(--crit-dim);color:var(--crit);border:1px solid #5C252A;display:none;}
 .error.show{display:block;}
 pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:'IBM Plex Sans',sans-serif;}
+body.embedded-widget{background:transparent;}
+body.embedded-widget .page-shell{max-width:none;padding:18px;}
+body.embedded-widget .page-header{display:none;}
+body.embedded-widget .panel{border-radius:12px;}
 @media (max-width: 760px){
   .page-header{flex-direction:column;align-items:flex-start;}
 }

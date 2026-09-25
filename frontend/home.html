@@ -7,34 +7,416 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/widgets/common.css">
+  <style>
+    .dashboard-shell{display:flex;flex-direction:column;gap:18px;}
+    .hero-panel{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;}
+    .hero-copy{max-width:720px;}
+    .hero-kpis{display:grid;grid-template-columns:repeat(3,minmax(110px,1fr));gap:10px;min-width:min(100%,360px);}
+    .kpi-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+    .kpi-card .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+    .kpi-card .value{margin-top:8px;font-size:26px;font-weight:600;}
+    .tile-grid{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;}
+    .tile{background:linear-gradient(180deg,rgba(91,155,213,.08),transparent 34%),var(--panel);border-radius:14px;padding:18px;min-height:240px;display:flex;flex-direction:column;gap:14px;position:relative;overflow:hidden;}
+    .tile-button{width:100%;text-align:left;font:inherit;color:inherit;background:none;border:1px solid var(--border);}
+    .tile:hover,.tile-button:hover{transform:translateY(-1px);border-color:#32577A;}
+    .tile-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}
+    .tile-top h2{margin:0 0 8px;font-size:18px;}
+    .eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--info);}
+    .tile-copy{margin:0;color:var(--muted);line-height:1.5;}
+    .tile-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .status-dot{width:10px;height:10px;border-radius:50%;background:var(--muted-2);}
+    .status-dot.ok{background:var(--up);box-shadow:0 0 10px rgba(62,207,142,.45);}
+    .status-dot.warn{background:var(--warn);box-shadow:0 0 10px rgba(232,163,61,.35);}
+    .status-dot.crit{background:var(--crit);box-shadow:0 0 10px rgba(229,72,77,.4);}
+    .status-text{font-size:13px;font-weight:600;}
+    .status-text.ok{color:var(--up);}
+    .status-text.warn{color:var(--warn);}
+    .status-text.crit{color:var(--crit);}
+    .summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+    .summary-card{background:rgba(15,20,23,.7);border:1px solid var(--border);border-radius:10px;padding:12px;}
+    .summary-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+    .summary-card .value{margin-top:6px;font-size:24px;font-weight:600;}
+    .summary-card .detail{margin-top:4px;color:var(--muted);font-size:12px;}
+    .summary-card.ok .value{color:var(--up);}
+    .summary-card.warn .value{color:var(--warn);}
+    .summary-card.crit .value{color:var(--crit);}
+    .issue-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;}
+    .issue-item{background:rgba(15,20,23,.62);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+    .issue-item-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:4px;}
+    .issue-name{font-size:13px;font-weight:600;}
+    .issue-meta{font-size:12px;color:var(--muted);}
+    .issue-pill{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent;text-transform:uppercase;letter-spacing:.04em;}
+    .issue-pill.ok{background:var(--up-dim);border-color:rgba(62,207,142,.2);color:var(--up);}
+    .issue-pill.warn{background:var(--warn-dim);border-color:rgba(232,163,61,.2);color:var(--warn);}
+    .issue-pill.crit{background:var(--crit-dim);border-color:rgba(229,72,77,.2);color:var(--crit);}
+    .issue-empty{margin-top:auto;padding:12px;border-radius:10px;border:1px dashed rgba(62,207,142,.24);background:rgba(27,58,46,.35);color:var(--up);}
+    .widget-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .widget-metric{background:rgba(15,20,23,.68);border:1px solid var(--border);border-radius:10px;padding:12px;}
+    .widget-metric .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+    .widget-metric .value{margin-top:6px;font-size:14px;font-weight:600;line-height:1.45;}
+    .tile-actions{margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+    .tile-link{display:inline-flex;align-items:center;gap:8px;color:var(--info);font-size:13px;font-weight:600;}
+    .tile-hint{color:var(--muted);font-size:12px;}
+    .flyout-backdrop{position:fixed;inset:0;background:rgba(6,10,13,.72);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .18s ease;z-index:40;}
+    .flyout-backdrop.open{opacity:1;pointer-events:auto;}
+    .flyout-panel{position:fixed;top:3vh;right:max(20px,5vw);width:min(60vw,920px);height:94vh;background:rgba(15,20,23,.96);border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.38);display:flex;flex-direction:column;transform:translateX(24px);opacity:0;pointer-events:none;transition:transform .18s ease,opacity .18s ease;z-index:41;overflow:hidden;}
+    .flyout-panel.open{transform:translateX(0);opacity:1;pointer-events:auto;}
+    .flyout-header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+    .flyout-header h2{margin:0;font-size:18px;}
+    .flyout-header p{margin:6px 0 0;color:var(--muted);}
+    .flyout-actions{display:flex;align-items:center;gap:10px;}
+    .ghost-link{display:inline-flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--border);padding:9px 12px;border-radius:8px;font-size:13px;color:var(--text);}
+    .close-btn{width:38px;height:38px;border-radius:10px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);font-size:20px;line-height:1;padding:0;}
+    .flyout-frame{flex:1;width:100%;border:0;background:transparent;}
+    .flyout-loading{padding:14px 18px;border-bottom:1px solid var(--border);color:var(--muted);font-size:12px;display:none;}
+    .flyout-loading.show{display:block;}
+    @media (max-width: 980px){
+      .hero-panel{flex-direction:column;}
+      .hero-kpis{width:100%;min-width:0;}
+      .flyout-panel{width:min(92vw,920px);right:4vw;}
+    }
+    @media (max-width: 760px){
+      .summary-grid,.hero-kpis,.widget-metrics{grid-template-columns:1fr;}
+      .tile-grid{grid-template-columns:1fr;}
+      .flyout-panel{inset:2vh 12px;width:auto;height:auto;}
+      .flyout-header{flex-direction:column;align-items:flex-start;}
+    }
+  </style>
 </head>
 <body>
   <main class="page-shell">
-    <header class="page-header">
-      <div>
-        <h1>Widgets Dashboard</h1>
-        <p class="subtitle">Launch NetMon and related troubleshooting utilities from one place.</p>
-      </div>
-    </header>
+    <div class="dashboard-shell">
+      <header class="page-header hero-panel">
+        <div class="hero-copy">
+          <h1>Widgets Dashboard</h1>
+          <p class="subtitle">See NetMon health at a glance and launch the supporting utilities in-place when you need them.</p>
+        </div>
+        <div class="hero-kpis">
+          <article class="kpi-card">
+            <div class="label">Monitored Devices</div>
+            <div class="value" id="hero-device-count">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="label">Active Issues</div>
+            <div class="value" id="hero-issue-count">—</div>
+          </article>
+          <article class="kpi-card">
+            <div class="label">Open Alerts</div>
+            <div class="value" id="hero-alert-count">—</div>
+          </article>
+        </div>
+      </header>
 
-    <section class="tile-grid">
-      <a class="tile" href="/widgets/netmon/">
-        <h2>NetMon</h2>
-        <p>Full monitoring dashboard (devices, alerts, rules, discovery, and live updates).</p>
-      </a>
-      <a class="tile" href="/widgets/dns-email/">
-        <h2>DNS/Email Troubleshooting</h2>
-        <p>Lookup ISP, ASN, geolocation, PTR data, and blacklist checks for a target.</p>
-      </a>
-      <a class="tile" href="/widgets/ticket-closure/">
-        <h2>Ticket Closure Generator</h2>
-        <p>Convert terse technical actions into polished, user-facing closure language.</p>
-      </a>
-      <a class="tile" href="/widgets/cert-expiration/">
-        <h2>Public Certificate Expiration Checker</h2>
-        <p>Inspect public TLS certificate identity, validity dates, and expiry status.</p>
-      </a>
-    </section>
+      <section class="tile-grid">
+        <a class="tile" href="/widgets/netmon/" aria-label="Open NetMon dashboard">
+          <div class="tile-top">
+            <div>
+              <div class="eyebrow">Live Monitoring</div>
+              <h2>NetMon</h2>
+              <p class="tile-copy">Full monitoring dashboard with device health, alerts, rules, discovery, and live updates.</p>
+            </div>
+            <div class="tile-status">
+              <span id="netmon-status-dot" class="status-dot"></span>
+              <span id="netmon-status-text" class="status-text">Loading status…</span>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <article class="summary-card ok">
+              <div class="label">Healthy</div>
+              <div class="value" id="netmon-healthy-count">—</div>
+              <div class="detail" id="netmon-healthy-detail">Devices within thresholds</div>
+            </article>
+            <article class="summary-card warn">
+              <div class="label">Warnings</div>
+              <div class="value" id="netmon-warning-count">—</div>
+              <div class="detail">Latency or packet loss elevated</div>
+            </article>
+            <article class="summary-card crit">
+              <div class="label">Down</div>
+              <div class="value" id="netmon-down-count">—</div>
+              <div class="detail">Devices not responding</div>
+            </article>
+          </div>
+          <ul class="issue-list" id="netmon-issue-list">
+            <li class="issue-item"><div class="issue-meta">Loading live device health…</div></li>
+          </ul>
+          <div class="tile-actions">
+            <span class="tile-link">Open dashboard →</span>
+            <span class="tile-hint" id="netmon-alert-hint">Fetching alerts…</span>
+          </div>
+        </a>
+
+        <button
+          class="tile tile-button"
+          type="button"
+          data-flyout-title="DNS/Email Troubleshooting"
+          data-flyout-description="Lookup ISP, ASN, geolocation, PTR data, and blacklist checks without leaving the dashboard."
+          data-flyout-src="/widgets/dns-email/?embedded=1"
+          data-full-src="/widgets/dns-email/">
+          <div class="tile-top">
+            <div>
+              <div class="eyebrow">Lookup Utility</div>
+              <h2>DNS/Email Troubleshooting</h2>
+              <p class="tile-copy">Inspect routing identity and reputation signals for a public hostname or IP.</p>
+            </div>
+            <span class="issue-pill ok">Flyout</span>
+          </div>
+          <div class="widget-metrics">
+            <article class="widget-metric">
+              <div class="label">Best For</div>
+              <div class="value">Quick IP, ASN, PTR, and blacklist checks</div>
+            </article>
+            <article class="widget-metric">
+              <div class="label">Workflow</div>
+              <div class="value">Run lookups in a side panel, then click away to return</div>
+            </article>
+          </div>
+          <div class="tile-actions">
+            <span class="tile-link">Open flyout →</span>
+            <span class="tile-hint">Closes when you click outside</span>
+          </div>
+        </button>
+
+        <button
+          class="tile tile-button"
+          type="button"
+          data-flyout-title="Ticket Closure Generator"
+          data-flyout-description="Turn internal notes into customer-facing closure language in a side panel."
+          data-flyout-src="/widgets/ticket-closure/?embedded=1"
+          data-full-src="/widgets/ticket-closure/">
+          <div class="tile-top">
+            <div>
+              <div class="eyebrow">Writing Utility</div>
+              <h2>Ticket Closure Generator</h2>
+              <p class="tile-copy">Convert terse remediation steps into a polished closure update without leaving the dashboard.</p>
+            </div>
+            <span class="issue-pill ok">Flyout</span>
+          </div>
+          <div class="widget-metrics">
+            <article class="widget-metric">
+              <div class="label">Input</div>
+              <div class="value">Paste technical notes line-by-line</div>
+            </article>
+            <article class="widget-metric">
+              <div class="label">Output</div>
+              <div class="value">User-friendly closure text ready for a ticket</div>
+            </article>
+          </div>
+          <div class="tile-actions">
+            <span class="tile-link">Open flyout →</span>
+            <span class="tile-hint">Keeps the dashboard visible underneath</span>
+          </div>
+        </button>
+
+        <button
+          class="tile tile-button"
+          type="button"
+          data-flyout-title="Public Certificate Expiration Checker"
+          data-flyout-description="Check public TLS certificate validity and expiry in a flyout."
+          data-flyout-src="/widgets/cert-expiration/?embedded=1"
+          data-full-src="/widgets/cert-expiration/">
+          <div class="tile-top">
+            <div>
+              <div class="eyebrow">Certificate Utility</div>
+              <h2>Public Certificate Expiration Checker</h2>
+              <p class="tile-copy">Review certificate identity, validity dates, and expiry status alongside the rest of the dashboard.</p>
+            </div>
+            <span class="issue-pill ok">Flyout</span>
+          </div>
+          <div class="widget-metrics">
+            <article class="widget-metric">
+              <div class="label">Checks</div>
+              <div class="value">Subject, issuer, dates, remaining days, and status</div>
+            </article>
+            <article class="widget-metric">
+              <div class="label">Layout</div>
+              <div class="value">Slides in over ~60% of the page until dismissed</div>
+            </article>
+          </div>
+          <div class="tile-actions">
+            <span class="tile-link">Open flyout →</span>
+            <span class="tile-hint">Use full page only if you want a dedicated view</span>
+          </div>
+        </button>
+      </section>
+    </div>
   </main>
+
+  <div id="flyout-backdrop" class="flyout-backdrop" aria-hidden="true"></div>
+  <aside id="flyout-panel" class="flyout-panel" aria-hidden="true">
+    <div class="flyout-header">
+      <div>
+        <h2 id="flyout-title">Widget</h2>
+        <p id="flyout-description"></p>
+      </div>
+      <div class="flyout-actions">
+        <a id="flyout-full-link" class="ghost-link" href="/" target="_blank" rel="noreferrer">Open full page</a>
+        <button id="flyout-close" class="close-btn" type="button" aria-label="Close widget flyout">×</button>
+      </div>
+    </div>
+    <div id="flyout-loading" class="flyout-loading">Loading widget…</div>
+    <iframe id="flyout-frame" class="flyout-frame" title="Widget flyout"></iframe>
+  </aside>
+
+  <script>
+    const issueList = document.getElementById('netmon-issue-list');
+    const flyoutPanel = document.getElementById('flyout-panel');
+    const flyoutBackdrop = document.getElementById('flyout-backdrop');
+    const flyoutFrame = document.getElementById('flyout-frame');
+    const flyoutTitle = document.getElementById('flyout-title');
+    const flyoutDescription = document.getElementById('flyout-description');
+    const flyoutFullLink = document.getElementById('flyout-full-link');
+    const flyoutLoading = document.getElementById('flyout-loading');
+
+    async function api(path){
+      const res = await fetch(path, {headers: {'Content-Type': 'application/json'}});
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+      return res.json();
+    }
+
+    function setText(id, value){
+      document.getElementById(id).textContent = value;
+    }
+
+    function issueLevel(device){
+      const live = device.live || {};
+      if (live.status === 'down') return 'crit';
+      if (live.latency_ms >= device.latency_threshold_ms || live.loss_pct >= device.loss_threshold_pct) return 'warn';
+      if (live.status === 'up') return 'ok';
+      return 'unknown';
+    }
+
+    function issueLabel(level, device){
+      if (level === 'crit') return 'Down';
+      if ((device.live?.latency_ms >= device.latency_threshold_ms) && (device.live?.loss_pct >= device.loss_threshold_pct)) return 'Latency + loss';
+      if (device.live?.latency_ms >= device.latency_threshold_ms) return 'Latency';
+      if (device.live?.loss_pct >= device.loss_threshold_pct) return 'Loss';
+      return device.live?.status === 'unknown' ? 'Unknown' : 'Healthy';
+    }
+
+    function buildIssueMarkup(device){
+      const level = issueLevel(device);
+      const live = device.live || {};
+      const latency = live.latency_ms == null ? '—' : `${Math.round(live.latency_ms)} ms`;
+      const loss = live.loss_pct == null ? '—' : `${Math.round(live.loss_pct)}% loss`;
+      return `
+        <li class="issue-item">
+          <div class="issue-item-head">
+            <span class="issue-name">${escapeHtml(device.name)}</span>
+            <span class="issue-pill ${level}">${issueLabel(level, device)}</span>
+          </div>
+          <div class="issue-meta">${escapeHtml(device.ip_address)} · ${latency} · ${loss}</div>
+        </li>`;
+    }
+
+    function escapeHtml(value){
+      return String(value ?? '').replace(/[&<>"']/g, (char) => (
+        {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[char]
+      ));
+    }
+
+    function setNetmonStatus(level, text){
+      const dot = document.getElementById('netmon-status-dot');
+      const label = document.getElementById('netmon-status-text');
+      dot.className = `status-dot ${level}`;
+      label.className = `status-text ${level}`;
+      label.textContent = text;
+    }
+
+    function openFlyout(button){
+      flyoutTitle.textContent = button.dataset.flyoutTitle;
+      flyoutDescription.textContent = button.dataset.flyoutDescription;
+      flyoutFullLink.href = button.dataset.fullSrc;
+      flyoutLoading.classList.add('show');
+      flyoutFrame.src = button.dataset.flyoutSrc;
+      flyoutPanel.classList.add('open');
+      flyoutBackdrop.classList.add('open');
+      flyoutPanel.setAttribute('aria-hidden', 'false');
+      flyoutBackdrop.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeFlyout(){
+      flyoutPanel.classList.remove('open');
+      flyoutBackdrop.classList.remove('open');
+      flyoutPanel.setAttribute('aria-hidden', 'true');
+      flyoutBackdrop.setAttribute('aria-hidden', 'true');
+      flyoutFrame.src = 'about:blank';
+      document.body.style.overflow = '';
+    }
+
+    async function loadDashboard(){
+      try {
+        const [devices, alerts] = await Promise.all([
+          api('/api/devices'),
+          api('/api/alerts?unresolved_only=true'),
+        ]);
+
+        const counts = {ok: 0, warn: 0, crit: 0, unknown: 0};
+        const issues = [];
+        let unknown = 0;
+        for (const device of devices) {
+          const level = issueLevel(device);
+          if (level === 'unknown') {
+            unknown += 1;
+            counts.unknown += 1;
+            continue;
+          }
+          if (level === 'ok') counts.ok += 1;
+          else {
+            counts[level] += 1;
+            issues.push(device);
+          }
+        }
+
+        setText('hero-device-count', String(devices.length));
+        setText('hero-issue-count', String(counts.warn + counts.crit));
+        setText('hero-alert-count', String(alerts.length));
+        setText('netmon-healthy-count', String(counts.ok));
+        setText('netmon-warning-count', String(counts.warn));
+        setText('netmon-down-count', String(counts.crit));
+        setText('netmon-healthy-detail', unknown ? `${unknown} awaiting enough data` : 'Devices within thresholds');
+        setText('netmon-alert-hint', alerts.length ? `${alerts.length} unresolved alert${alerts.length === 1 ? '' : 's'}` : 'No unresolved alerts');
+
+        if (counts.crit) setNetmonStatus('crit', `${counts.crit} device${counts.crit === 1 ? '' : 's'} down`);
+        else if (counts.warn) setNetmonStatus('warn', `${counts.warn} device${counts.warn === 1 ? '' : 's'} need attention`);
+        else if (unknown && unknown === devices.length) setNetmonStatus('warn', 'Waiting for live samples');
+        else if (devices.length) setNetmonStatus('ok', 'All monitored devices healthy');
+        else setNetmonStatus('warn', 'No devices configured yet');
+
+        if (issues.length) {
+          const levelPriority = {crit: 0, warn: 1, ok: 2, unknown: 3};
+          issueList.innerHTML = issues
+            .sort((a, b) => levelPriority[issueLevel(a)] - levelPriority[issueLevel(b)])
+            .slice(0, 4)
+            .map(buildIssueMarkup)
+            .join('');
+        } else if (unknown) {
+          issueList.innerHTML = `<li class="issue-item"><div class="issue-name">Waiting for live data</div><div class="issue-meta">${unknown} device${unknown === 1 ? '' : 's'} still building their first samples.</div></li>`;
+        } else {
+          issueList.innerHTML = '<li class="issue-empty">No current outages or threshold breaches.</li>';
+        }
+      } catch (error) {
+        setNetmonStatus('warn', 'Unable to load live health');
+        setText('netmon-alert-hint', 'Dashboard preview unavailable');
+        issueList.innerHTML = `<li class="issue-item"><div class="issue-name">Preview unavailable</div><div class="issue-meta">${escapeHtml(error.message)}</div></li>`;
+      }
+    }
+
+    document.querySelectorAll('[data-flyout-src]').forEach((button) => {
+      button.addEventListener('click', () => openFlyout(button));
+    });
+    document.getElementById('flyout-close').addEventListener('click', closeFlyout);
+    flyoutBackdrop.addEventListener('click', closeFlyout);
+    flyoutFrame.addEventListener('load', () => flyoutLoading.classList.remove('show'));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && flyoutPanel.classList.contains('open')) closeFlyout();
+    });
+
+    loadDashboard();
+  </script>
 </body>
 </html>
