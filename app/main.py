@@ -102,6 +102,7 @@ async def lifespan(app: FastAPI):
     prune_task = asyncio.create_task(_pruning_loop())
     yield
     prune_task.cancel()
+    await asyncio.gather(prune_task, return_exceptions=True)
     await agent_relay.stop()
     await engine.stop()
     await db.close()

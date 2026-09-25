@@ -68,8 +68,18 @@ class AgentRelayService:
         live_by_device = {rt.device["id"]: rt.stats() for rt in self.engine.runtimes.values()}
         endpoints = [{**device, "live": live_by_device.get(device["id"])} for device in devices]
 
-        all_alerts = await self.db.list_alerts(unresolved_only=False, limit=1000)
-        new_alerts = [alert for alert in reversed(all_alerts) if alert["id"] > self._last_alert_id]
+        new_alerts: list[dict] = []
+        page_size = 500
+        offset = 0
+        while True:
+            batch = await self.db.list_alerts_since(self._last_alert_id, limit=page_size, offset=offset)
+            if not batch:
+                break
+            new_alerts.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+
         payload = {
             "pairing_token": self.pairing_token,
             "agent_name": self.agent_name,

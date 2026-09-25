@@ -28,8 +28,9 @@ class _FakeDB:
     async def list_devices(self):
         return self.devices
 
-    async def list_alerts(self, unresolved_only=False, limit=1000):
-        return self.alerts[:limit]
+    async def list_alerts_since(self, alert_id=0, limit=500, offset=0):
+        filtered = sorted([a for a in self.alerts if a["id"] > alert_id], key=lambda item: item["id"])
+        return filtered[offset:offset + limit]
 
 
 class _Response:
