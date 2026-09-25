@@ -55,8 +55,13 @@
     .widget-metric .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
     .widget-metric .value{margin-top:6px;font-size:14px;font-weight:600;line-height:1.45;}
     .tile-actions{margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+    .tile-action-copy{display:flex;flex-direction:column;gap:4px;}
     .tile-link{display:inline-flex;align-items:center;gap:8px;color:var(--info);font-size:13px;font-weight:600;}
     .tile-hint{color:var(--muted);font-size:12px;}
+    .live-indicator{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;}
+    .live-indicator.online{color:var(--up);}
+    .live-indicator.offline{color:var(--warn);}
+    .live-indicator.pending{color:var(--info);}
     .flyout-backdrop{position:fixed;inset:0;background:rgba(6,10,13,.72);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .18s ease;z-index:40;}
     .flyout-backdrop.open{opacity:1;pointer-events:auto;}
     .flyout-panel{position:fixed;top:3vh;right:max(20px,5vw);width:min(60vw,920px);height:94vh;background:rgba(15,20,23,.96);border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.38);display:flex;flex-direction:column;transform:translateX(24px);opacity:0;pointer-events:none;transition:transform .18s ease,opacity .18s ease;z-index:41;overflow:hidden;}
@@ -141,7 +146,10 @@
             <li class="issue-item"><div class="issue-meta">Loading live device health…</div></li>
           </ul>
           <div class="tile-actions">
-            <span class="tile-link">Open dashboard →</span>
+            <span class="tile-action-copy">
+              <span class="tile-link">Open dashboard →</span>
+              <span class="live-indicator pending" id="netmon-live-indicator">Connecting…</span>
+            </span>
             <span class="tile-hint" id="netmon-alert-hint">Fetching alerts…</span>
           </div>
         </a>
@@ -298,6 +306,24 @@
     const flyoutDescription = document.getElementById('flyout-description');
     const flyoutFullLink = document.getElementById('flyout-full-link');
     const flyoutLoading = document.getElementById('flyout-loading');
+    const liveIndicator = document.getElementById('netmon-live-indicator');
+    const dashboardSocketUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+    const dashboardRefreshDebounceMs = 1000;
+    const dashboardPollMs = 30000;
+    const socketReconnectMaxMs = 30000;
+    let cachedDeviceMap = new Map();
+    let cachedIssueLevels = new Map();
+    let hasDashboardData = false;
+    let lastDashboardUpdate = null;
+    let lastAlertHint = 'Fetching alerts…';
+    let dashboardRefreshWarning = '';
+    let dashboardLoadPromise = null;
+    let dashboardRefreshQueued = false;
+    let dashboardRefreshTimer = null;
+    let dashboardSocket = null;
+    let dashboardSocketConnected = false;
+    let dashboardSocketReconnectTimer = null;
+    let dashboardSocketReconnectMs = 1000;
 
     async function api(path){
       const res = await fetch(path, {headers: {'Content-Type': 'application/json'}});
@@ -312,12 +338,16 @@
       document.getElementById(id).textContent = value;
     }
 
-    function issueLevel(device){
-      const live = device.live || {};
-      if (live.status === 'down') return 'crit';
-      if (live.latency_ms >= device.latency_threshold_ms || live.loss_pct >= device.loss_threshold_pct) return 'warn';
-      if (live.status === 'up') return 'ok';
+    function issueLevelFromLive(live, device){
+      const sample = live || {};
+      if (sample.status === 'down') return 'crit';
+      if (sample.latency_ms >= device.latency_threshold_ms || sample.loss_pct >= device.loss_threshold_pct) return 'warn';
+      if (sample.status === 'up') return 'ok';
       return 'unknown';
+    }
+
+    function issueLevel(device){
+      return issueLevelFromLive(device.live, device);
     }
 
     function issueLabel(level, device){
@@ -357,6 +387,180 @@
       label.textContent = text;
     }
 
+    function formatClock(date){
+      return date
+        ? date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'})
+        : null;
+    }
+
+    function updateAlertHint(){
+      const hint = dashboardRefreshWarning ? `${lastAlertHint} · ${dashboardRefreshWarning}` : lastAlertHint;
+      setText('netmon-alert-hint', hint);
+    }
+
+    function setLiveIndicator(state){
+      const updated = lastDashboardUpdate ? `Updated ${formatClock(lastDashboardUpdate)}` : null;
+      liveIndicator.className = `live-indicator ${state}`;
+      if (state === 'pending') {
+        liveIndicator.textContent = updated ? `Refreshing · ${updated}` : 'Refreshing…';
+        return;
+      }
+      const prefix = state === 'online' ? 'Live' : 'Offline';
+      liveIndicator.textContent = updated ? `${prefix} · ${updated}` : prefix;
+    }
+
+    function cacheDashboardDevices(devices){
+      cachedDeviceMap = new Map(devices.map((device) => [device.id, device]));
+      cachedIssueLevels = new Map(devices.map((device) => [device.id, issueLevel(device)]));
+    }
+
+    function renderDashboard(devices, alerts){
+      const counts = {ok: 0, warn: 0, crit: 0, unknown: 0};
+      const issues = [];
+      let unknown = 0;
+      for (const device of devices) {
+        const level = issueLevel(device);
+        if (level === 'unknown') {
+          unknown += 1;
+          counts.unknown += 1;
+          continue;
+        }
+        if (level === 'ok') counts.ok += 1;
+        else {
+          counts[level] += 1;
+          issues.push(device);
+        }
+      }
+
+      setText('hero-device-count', String(devices.length));
+      setText('hero-issue-count', String(counts.warn + counts.crit));
+      setText('hero-alert-count', String(alerts.length));
+      setText('netmon-healthy-count', String(counts.ok));
+      setText('netmon-warning-count', String(counts.warn));
+      setText('netmon-down-count', String(counts.crit));
+      setText('netmon-healthy-detail', unknown ? `${unknown} awaiting enough data` : 'Devices within thresholds');
+
+      lastAlertHint = alerts.length ? `${alerts.length} unresolved alert${alerts.length === 1 ? '' : 's'}` : 'No unresolved alerts';
+      dashboardRefreshWarning = '';
+      updateAlertHint();
+
+      if (counts.crit) setNetmonStatus('crit', `${counts.crit} device${counts.crit === 1 ? '' : 's'} down`);
+      else if (counts.warn) setNetmonStatus('warn', `${counts.warn} device${counts.warn === 1 ? '' : 's'} need attention`);
+      else if (unknown && unknown === devices.length) setNetmonStatus('warn', 'Waiting for live samples');
+      else if (devices.length) setNetmonStatus('ok', 'All monitored devices healthy');
+      else setNetmonStatus('warn', 'No devices configured yet');
+
+      if (issues.length) {
+        const levelPriority = {crit: 0, warn: 1, ok: 2, unknown: 3};
+        issueList.innerHTML = issues
+          .sort((a, b) => levelPriority[issueLevel(a)] - levelPriority[issueLevel(b)])
+          .slice(0, 4)
+          .map(buildIssueMarkup)
+          .join('');
+      } else if (unknown) {
+        issueList.innerHTML = `<li class="issue-item"><div class="issue-name">Waiting for live data</div><div class="issue-meta">${unknown} device${unknown === 1 ? '' : 's'} still building their first samples.</div></li>`;
+      } else {
+        issueList.innerHTML = '<li class="issue-empty">No current outages or threshold breaches.</li>';
+      }
+    }
+
+    function showInitialDashboardError(error){
+      setNetmonStatus('warn', 'Unable to load live health');
+      lastAlertHint = 'Dashboard preview unavailable';
+      dashboardRefreshWarning = '';
+      updateAlertHint();
+      issueList.innerHTML = `<li class="issue-item"><div class="issue-name">Preview unavailable</div><div class="issue-meta">${escapeHtml(error.message)}</div></li>`;
+      setLiveIndicator(dashboardSocketConnected ? 'online' : 'offline');
+    }
+
+    function noteBackgroundRefreshError(){
+      dashboardRefreshWarning = `Refresh failed at ${formatClock(new Date())}; showing last data`;
+      updateAlertHint();
+      setLiveIndicator(dashboardSocketConnected ? 'online' : 'offline');
+    }
+
+    function requestDashboardRefresh({immediate = false} = {}){
+      if (dashboardLoadPromise) {
+        dashboardRefreshQueued = true;
+        return;
+      }
+      if (dashboardRefreshTimer) clearTimeout(dashboardRefreshTimer);
+      if (immediate) {
+        loadDashboard();
+        return;
+      }
+      dashboardRefreshTimer = window.setTimeout(() => {
+        dashboardRefreshTimer = null;
+        loadDashboard();
+      }, dashboardRefreshDebounceMs);
+    }
+
+    function scheduleSocketReconnect(){
+      if (dashboardSocketReconnectTimer) return;
+      dashboardSocketReconnectTimer = window.setTimeout(() => {
+        dashboardSocketReconnectTimer = null;
+        connectDashboardSocket();
+      }, dashboardSocketReconnectMs);
+      dashboardSocketReconnectMs = Math.min(dashboardSocketReconnectMs * 2, socketReconnectMaxMs);
+    }
+
+    function handleDashboardSocketMessage(event){
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (payload.kind === 'alert') {
+        requestDashboardRefresh();
+        return;
+      }
+      if (payload.kind !== 'update' || !payload.stats) return;
+      const device = cachedDeviceMap.get(payload.stats.device_id);
+      if (!device) {
+        requestDashboardRefresh();
+        return;
+      }
+      const nextLevel = issueLevelFromLive(payload.stats, device);
+      const prevLevel = cachedIssueLevels.get(payload.stats.device_id);
+      cachedIssueLevels.set(payload.stats.device_id, nextLevel);
+      if (prevLevel !== nextLevel) requestDashboardRefresh();
+    }
+
+    function connectDashboardSocket(){
+      if (dashboardSocket && (dashboardSocket.readyState === WebSocket.OPEN || dashboardSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      const socket = new WebSocket(dashboardSocketUrl);
+      dashboardSocket = socket;
+
+      socket.addEventListener('open', () => {
+        if (dashboardSocket !== socket) return;
+        dashboardSocketConnected = true;
+        dashboardSocketReconnectMs = 1000;
+        if (dashboardSocketReconnectTimer) {
+          clearTimeout(dashboardSocketReconnectTimer);
+          dashboardSocketReconnectTimer = null;
+        }
+        setLiveIndicator(hasDashboardData ? 'online' : 'pending');
+      });
+
+      socket.addEventListener('message', handleDashboardSocketMessage);
+
+      socket.addEventListener('close', () => {
+        if (dashboardSocket !== socket) return;
+        dashboardSocketConnected = false;
+        setLiveIndicator(hasDashboardData ? 'offline' : 'pending');
+        scheduleSocketReconnect();
+      });
+
+      socket.addEventListener('error', () => {
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close();
+        }
+      });
+    }
+
     function openFlyout(button){
       flyoutTitle.textContent = button.dataset.flyoutTitle;
       flyoutDescription.textContent = button.dataset.flyoutDescription;
@@ -380,61 +584,41 @@
     }
 
     async function loadDashboard(){
-      try {
-        const [devices, alerts] = await Promise.all([
-          api('/api/devices'),
-          api('/api/alerts?unresolved_only=true'),
-        ]);
-
-        const counts = {ok: 0, warn: 0, crit: 0, unknown: 0};
-        const issues = [];
-        let unknown = 0;
-        for (const device of devices) {
-          const level = issueLevel(device);
-          if (level === 'unknown') {
-            unknown += 1;
-            counts.unknown += 1;
-            continue;
-          }
-          if (level === 'ok') counts.ok += 1;
-          else {
-            counts[level] += 1;
-            issues.push(device);
-          }
-        }
-
-        setText('hero-device-count', String(devices.length));
-        setText('hero-issue-count', String(counts.warn + counts.crit));
-        setText('hero-alert-count', String(alerts.length));
-        setText('netmon-healthy-count', String(counts.ok));
-        setText('netmon-warning-count', String(counts.warn));
-        setText('netmon-down-count', String(counts.crit));
-        setText('netmon-healthy-detail', unknown ? `${unknown} awaiting enough data` : 'Devices within thresholds');
-        setText('netmon-alert-hint', alerts.length ? `${alerts.length} unresolved alert${alerts.length === 1 ? '' : 's'}` : 'No unresolved alerts');
-
-        if (counts.crit) setNetmonStatus('crit', `${counts.crit} device${counts.crit === 1 ? '' : 's'} down`);
-        else if (counts.warn) setNetmonStatus('warn', `${counts.warn} device${counts.warn === 1 ? '' : 's'} need attention`);
-        else if (unknown && unknown === devices.length) setNetmonStatus('warn', 'Waiting for live samples');
-        else if (devices.length) setNetmonStatus('ok', 'All monitored devices healthy');
-        else setNetmonStatus('warn', 'No devices configured yet');
-
-        if (issues.length) {
-          const levelPriority = {crit: 0, warn: 1, ok: 2, unknown: 3};
-          issueList.innerHTML = issues
-            .sort((a, b) => levelPriority[issueLevel(a)] - levelPriority[issueLevel(b)])
-            .slice(0, 4)
-            .map(buildIssueMarkup)
-            .join('');
-        } else if (unknown) {
-          issueList.innerHTML = `<li class="issue-item"><div class="issue-name">Waiting for live data</div><div class="issue-meta">${unknown} device${unknown === 1 ? '' : 's'} still building their first samples.</div></li>`;
-        } else {
-          issueList.innerHTML = '<li class="issue-empty">No current outages or threshold breaches.</li>';
-        }
-      } catch (error) {
-        setNetmonStatus('warn', 'Unable to load live health');
-        setText('netmon-alert-hint', 'Dashboard preview unavailable');
-        issueList.innerHTML = `<li class="issue-item"><div class="issue-name">Preview unavailable</div><div class="issue-meta">${escapeHtml(error.message)}</div></li>`;
+      if (dashboardRefreshTimer) {
+        clearTimeout(dashboardRefreshTimer);
+        dashboardRefreshTimer = null;
       }
+      if (dashboardLoadPromise) {
+        dashboardRefreshQueued = true;
+        return dashboardLoadPromise;
+      }
+
+      if (hasDashboardData) setLiveIndicator('pending');
+
+      dashboardLoadPromise = (async () => {
+        try {
+          const [devices, alerts] = await Promise.all([
+            api('/api/devices'),
+            api('/api/alerts?unresolved_only=true'),
+          ]);
+          cacheDashboardDevices(devices);
+          renderDashboard(devices, alerts);
+          hasDashboardData = true;
+          lastDashboardUpdate = new Date();
+          setLiveIndicator(dashboardSocketConnected ? 'online' : 'offline');
+        } catch (error) {
+          if (hasDashboardData) noteBackgroundRefreshError();
+          else showInitialDashboardError(error);
+        } finally {
+          dashboardLoadPromise = null;
+          if (dashboardRefreshQueued) {
+            dashboardRefreshQueued = false;
+            loadDashboard();
+          }
+        }
+      })();
+
+      return dashboardLoadPromise;
     }
 
     document.querySelectorAll('[data-flyout-src]').forEach((button) => {
@@ -446,7 +630,17 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && flyoutPanel.classList.contains('open')) closeFlyout();
     });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        connectDashboardSocket();
+        requestDashboardRefresh({immediate: true});
+      }
+    });
 
+    window.setInterval(() => {
+      if (!document.hidden) requestDashboardRefresh();
+    }, dashboardPollMs);
+    connectDashboardSocket();
     loadDashboard();
   </script>
 </body>
