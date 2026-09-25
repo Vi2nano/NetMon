@@ -28,9 +28,9 @@ class _FakeDB:
     async def list_devices(self):
         return self.devices
 
-    async def list_alerts_since(self, alert_id=0, limit=500, offset=0):
+    async def list_alerts_since(self, alert_id=0, limit=500):
         filtered = sorted([a for a in self.alerts if a["id"] > alert_id], key=lambda item: item["id"])
-        return filtered[offset:offset + limit]
+        return filtered[:limit]
 
 
 class _Response:
@@ -166,6 +166,48 @@ class AgentRelayTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([alert["id"] for alert in calls[0][1]["alerts"]], [1, 2])
         self.assertEqual([alert["id"] for alert in calls[1][1]["alerts"]], [3])
+
+    async def test_alert_pagination_uses_last_seen_id(self):
+        calls = []
+        responses = [_Response(200)]
+        alerts = [
+            {"id": alert_id, "device_id": 1, "type": "down", "message": f"alert-{alert_id}", "created_at": "t"}
+            for alert_id in range(1, 651)
+        ]
+        db = _FakeDB(
+            devices=[{"id": 1, "name": "router", "ip_address": "192.168.1.1", "enabled": 1}],
+            alerts=alerts,
+        )
+        engine = _FakeEngine()
+        engine.runtimes[1] = _Runtime(1, {"device_id": 1, "status": "up"})
+
+        original_list_alerts_since = db.list_alerts_since
+        request_count = {"count": 0}
+
+        async def dynamic_list_alerts_since(alert_id=0, limit=500):
+            request_count["count"] += 1
+            if request_count["count"] == 2:
+                db.alerts.append(
+                    {"id": 651, "device_id": 1, "type": "recovered", "message": "up", "created_at": "t"}
+                )
+            return await original_list_alerts_since(alert_id=alert_id, limit=limit)
+
+        with patch.dict(
+            os.environ,
+            {
+                "NETMON_AGENT_UPSTREAM_URL": "https://noc.example.com",
+                "NETMON_AGENT_PAIRING_TOKEN": "pair-123",
+            },
+            clear=True,
+        ), patch("app.agent_relay.httpx.AsyncClient", return_value=_Client(calls, responses)):
+            relay = AgentRelayService(db, engine)
+            db.list_alerts_since = dynamic_list_alerts_since
+            await relay._relay_once()
+
+        sent_ids = [alert["id"] for alert in calls[0][1]["alerts"]]
+        self.assertEqual(len(sent_ids), 651)
+        self.assertEqual(sent_ids[0], 1)
+        self.assertEqual(sent_ids[-1], 651)
 
 
 if __name__ == "__main__":

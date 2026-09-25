@@ -70,15 +70,15 @@ class AgentRelayService:
 
         new_alerts: list[dict] = []
         page_size = 500
-        offset = 0
+        last_seen_alert_id = self._last_alert_id
         while True:
-            batch = await self.db.list_alerts_since(self._last_alert_id, limit=page_size, offset=offset)
+            batch = await self.db.list_alerts_since(last_seen_alert_id, limit=page_size)
             if not batch:
                 break
             new_alerts.extend(batch)
+            last_seen_alert_id = batch[-1]["id"]
             if len(batch) < page_size:
                 break
-            offset += page_size
 
         payload = {
             "pairing_token": self.pairing_token,

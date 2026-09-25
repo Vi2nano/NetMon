@@ -273,15 +273,15 @@ class Database:
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
-    async def list_alerts_since(self, alert_id: int, limit: int = 500, offset: int = 0) -> list[dict]:
+    async def list_alerts_since(self, alert_id: int, limit: int = 500) -> list[dict]:
         cur = await self.conn.execute(
             """SELECT alerts.*, devices.name as device_name, devices.ip_address
                FROM alerts
                JOIN devices ON devices.id = alerts.device_id
                WHERE alerts.id > ?
                ORDER BY alerts.id ASC
-               LIMIT ? OFFSET ?""",
-            (alert_id, limit, offset),
+               LIMIT ?""",
+            (alert_id, limit),
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
