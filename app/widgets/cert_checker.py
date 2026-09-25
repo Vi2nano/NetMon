@@ -25,6 +25,7 @@ def _extract_name(parts: tuple[tuple[str, str], ...]) -> str:
 
 def _check_cert_sync(hostname: str, port: int) -> dict:
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     with socket.create_connection((hostname, port), timeout=8.0) as sock:
         with context.wrap_socket(sock, server_hostname=hostname) as tls_sock:
             cert = tls_sock.getpeercert()

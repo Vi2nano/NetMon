@@ -19,11 +19,9 @@ function setText(id, text) {
 }
 
 function fmtDate(value) {
-  try {
-    return new Date(value).toLocaleString();
-  } catch (_) {
-    return value;
-  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value || 'N/A';
+  return parsed.toLocaleString();
 }
 
 function statusBadge(status, days) {
