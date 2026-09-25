@@ -8,6 +8,8 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -138,6 +140,13 @@ class SettingIn(BaseModel):
     value: str
 
 
+class SharedBookmarkIn(BaseModel):
+    scope: str
+    title: str = Field(min_length=1, max_length=120)
+    url: str = Field(min_length=1, max_length=2048)
+    note: str = Field(default="", max_length=240)
+
+
 class ScanPayload(BaseModel):
     subnet: str  # Expects CIDR like "192.168.1.0/24"
 
@@ -191,6 +200,67 @@ def _validate_rule(payload: dict):
         raise HTTPException(400, "port is required when metric is 'port_down'")
     if payload.get("metric") and payload.get("metric") != "port_down" and payload.get("threshold") is None:
         raise HTTPException(400, "threshold is required for this metric")
+
+
+BOOKMARK_SHARED_SCOPES = ("organization", "deployment")
+BOOKMARK_SETTINGS_KEY = "bookmark_toolbox_shared_links"
+
+
+def _validate_bookmark_scope(scope: str) -> str:
+    normalized = str(scope or "").strip().lower()
+    if normalized not in BOOKMARK_SHARED_SCOPES:
+        raise HTTPException(400, f"scope must be one of {BOOKMARK_SHARED_SCOPES}")
+    return normalized
+
+
+def _validate_bookmark_url(value: str) -> str:
+    normalized = str(value or "").strip()
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(400, "url must be a valid http or https URL")
+    return normalized
+
+
+def _coerce_shared_bookmark(item: object) -> Optional[dict]:
+    if not isinstance(item, dict):
+        return None
+    bookmark_id = str(item.get("id") or "").strip()
+    title = str(item.get("title") or "").strip()
+    note = str(item.get("note") or "").strip()
+    try:
+        scope = _validate_bookmark_scope(str(item.get("scope") or ""))
+        url = _validate_bookmark_url(str(item.get("url") or ""))
+    except HTTPException:
+        return None
+    if not bookmark_id or not title:
+        return None
+    return {
+        "id": bookmark_id,
+        "scope": scope,
+        "title": title,
+        "url": url,
+        "note": note,
+    }
+
+
+async def _get_shared_bookmarks() -> dict[str, list[dict]]:
+    raw = await db.get_setting(BOOKMARK_SETTINGS_KEY, {})
+    buckets = {scope: [] for scope in BOOKMARK_SHARED_SCOPES}
+    if not isinstance(raw, dict):
+        return buckets
+    for scope in BOOKMARK_SHARED_SCOPES:
+        items = raw.get(scope, [])
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            bookmark = _coerce_shared_bookmark(item)
+            if bookmark and bookmark["scope"] == scope:
+                buckets[scope].append(bookmark)
+    return buckets
+
+
+async def _save_shared_bookmarks(bookmarks: dict[str, list[dict]]):
+    await db.set_setting(BOOKMARK_SETTINGS_KEY, bookmarks)
 
 
 # ---------------------------------------------------------------- groups
@@ -424,6 +494,42 @@ async def set_webhook_provider(payload: SettingIn):
     return {"ok": True}
 
 
+@app.get("/api/widgets/bookmark-toolbox/shared")
+async def get_shared_bookmarks():
+    return await _get_shared_bookmarks()
+
+
+@app.post("/api/widgets/bookmark-toolbox/shared")
+async def create_shared_bookmark(payload: SharedBookmarkIn):
+    scope = _validate_bookmark_scope(payload.scope)
+    title = payload.title.strip()
+    url = _validate_bookmark_url(payload.url)
+    note = payload.note.strip()
+    bookmark = {
+        "id": uuid4().hex,
+        "scope": scope,
+        "title": title,
+        "url": url,
+        "note": note,
+    }
+    bookmarks = await _get_shared_bookmarks()
+    bookmarks[scope].insert(0, bookmark)
+    await _save_shared_bookmarks(bookmarks)
+    return bookmark
+
+
+@app.delete("/api/widgets/bookmark-toolbox/shared/{scope}/{bookmark_id}")
+async def delete_shared_bookmark(scope: str, bookmark_id: str):
+    scope = _validate_bookmark_scope(scope)
+    bookmarks = await _get_shared_bookmarks()
+    original_count = len(bookmarks[scope])
+    bookmarks[scope] = [item for item in bookmarks[scope] if item["id"] != bookmark_id]
+    if len(bookmarks[scope]) == original_count:
+        raise HTTPException(404, "Bookmark not found")
+    await _save_shared_bookmarks(bookmarks)
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- import/export
 
 @app.get("/api/export/config")
@@ -512,3 +618,9 @@ async def ticket_closure_widget():
 @app.get("/widgets/cert-expiration/")
 async def cert_expiration_widget():
     return FileResponse(str(WIDGETS_DIR / "cert-expiration" / "index.html"))
+
+
+@app.get("/widgets/bookmark-toolbox")
+@app.get("/widgets/bookmark-toolbox/")
+async def bookmark_toolbox_widget():
+    return FileResponse(str(WIDGETS_DIR / "bookmark-toolbox" / "index.html"))

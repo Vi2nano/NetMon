@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bookmark Toolbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/widgets/common.css">
+  <style>
+    .bookmark-shell{display:flex;flex-direction:column;gap:16px;}
+    .bookmark-form{display:flex;flex-direction:column;gap:12px;}
+    .bookmark-form textarea{min-height:90px;}
+    .bookmark-form-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+    .scope-help{font-size:12px;color:var(--muted);}
+    .bookmark-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+    .bookmark-group{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;min-height:220px;}
+    .bookmark-group h2{margin:0;font-size:15px;}
+    .bookmark-group p{margin:0;color:var(--muted);font-size:12px;line-height:1.5;}
+    .bookmark-list{display:flex;flex-direction:column;gap:10px;}
+    .bookmark-card{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;}
+    .bookmark-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+    .bookmark-link{font-size:14px;font-weight:600;color:var(--text);word-break:break-word;}
+    .bookmark-link:hover{color:var(--info);}
+    .bookmark-url{font-size:12px;color:var(--info);word-break:break-all;}
+    .bookmark-note{font-size:12px;color:var(--muted);line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+    .bookmark-delete{padding:7px 10px;font-size:12px;white-space:nowrap;}
+    .bookmark-empty{margin:auto 0;padding:12px;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:12px;line-height:1.5;}
+    .status-line{display:none;padding:10px 12px;border-radius:7px;border:1px solid rgba(91,155,213,.35);background:var(--info-dim);color:var(--text);font-size:12px;}
+    .status-line.show{display:block;}
+    @media (max-width: 760px){
+      .bookmark-card-header,.bookmark-form-actions{flex-direction:column;align-items:flex-start;}
+      .bookmark-delete{width:100%;}
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <h1>Bookmark Toolbox</h1>
+        <p class="subtitle">Save quick links for yourself, your organization, or this deployment without leaving NetMon.</p>
+      </div>
+      <a class="back-link" href="/">← Back to widgets</a>
+    </header>
+
+    <div class="bookmark-shell">
+      <section class="panel">
+        <form id="bookmark-form" class="bookmark-form">
+          <div class="form-row">
+            <div class="field">
+              <label for="bookmark-title">Link name</label>
+              <input id="bookmark-title" maxlength="120" placeholder="Grafana dashboard">
+            </div>
+            <div class="field">
+              <label for="bookmark-url">URL</label>
+              <input id="bookmark-url" maxlength="2048" placeholder="https://example.com/dashboard">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label for="bookmark-scope">Save to</label>
+              <select id="bookmark-scope">
+                <option value="user">User</option>
+                <option value="organization">Organization</option>
+                <option value="deployment">Deployment</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="bookmark-note">Notes (optional)</label>
+              <textarea id="bookmark-note" maxlength="240" placeholder="Why this link matters, when to use it, or what team owns it."></textarea>
+            </div>
+          </div>
+          <div id="bookmark-error" class="error"></div>
+          <div id="bookmark-status" class="status-line"></div>
+          <div class="bookmark-form-actions">
+            <div class="scope-help">User links stay in this browser. Organization and deployment links are shared through NetMon.</div>
+            <button type="submit">Save link</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="bookmark-groups">
+        <article class="bookmark-group">
+          <div>
+            <h2>User</h2>
+            <p>Personal quick links stored only in your current browser.</p>
+          </div>
+          <div id="bookmark-list-user" class="bookmark-list"></div>
+        </article>
+        <article class="bookmark-group">
+          <div>
+            <h2>Organization</h2>
+            <p>Shared links for team workflows and standard operational tools.</p>
+          </div>
+          <div id="bookmark-list-organization" class="bookmark-list"></div>
+        </article>
+        <article class="bookmark-group">
+          <div>
+            <h2>Deployment</h2>
+            <p>Links tied to this NetMon deployment, environment, or site.</p>
+          </div>
+          <div id="bookmark-list-deployment" class="bookmark-list"></div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/widgets/embed.js"></script>
+  <script src="/static/widgets/bookmark-toolbox/app.js"></script>
+</body>
+</html>
