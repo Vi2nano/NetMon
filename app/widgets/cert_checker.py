@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import socket
 import ssl
 from datetime import datetime, timezone
@@ -23,10 +24,33 @@ def _extract_name(parts: tuple[tuple[str, str], ...]) -> str:
     return "N/A"
 
 
-def _check_cert_sync(hostname: str, port: int) -> dict:
+def _resolve_public_ip(hostname: str) -> str:
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise HTTPException(400, "Hostname could not be resolved")
+
+    candidates: list[str] = []
+    for info in infos:
+        raw = info[4][0]
+        try:
+            ip = str(ipaddress.ip_address(raw))
+            if ipaddress.ip_address(ip).is_global and ip not in candidates:
+                candidates.append(ip)
+        except Exception:
+            continue
+
+    if not candidates:
+        raise HTTPException(400, "Only public hostnames/IPs are allowed")
+
+    ipv4 = next((item for item in candidates if ipaddress.ip_address(item).version == 4), None)
+    return ipv4 or candidates[0]
+
+
+def _check_cert_sync(hostname: str, connect_ip: str, port: int) -> dict:
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
-    with socket.create_connection((hostname, port), timeout=8.0) as sock:
+    with socket.create_connection((connect_ip, port), timeout=8.0) as sock:
         with context.wrap_socket(sock, server_hostname=hostname) as tls_sock:
             cert = tls_sock.getpeercert()
     if not cert or "notBefore" not in cert or "notAfter" not in cert:
@@ -46,6 +70,7 @@ def _check_cert_sync(hostname: str, port: int) -> dict:
 
     return {
         "hostname": hostname,
+        "resolved_ip": connect_ip,
         "port": port,
         "subject_cn": _extract_name(cert.get("subject", ())),
         "issuer_cn": _extract_name(cert.get("issuer", ())),
@@ -61,11 +86,10 @@ async def check_certificate(payload: CertCheckIn):
     hostname = payload.hostname.strip()
     if not hostname:
         raise HTTPException(400, "Hostname is required")
+    connect_ip = _resolve_public_ip(hostname)
 
     try:
-        return await asyncio.to_thread(_check_cert_sync, hostname, payload.port)
-    except socket.gaierror:
-        raise HTTPException(400, "Hostname could not be resolved")
+        return await asyncio.to_thread(_check_cert_sync, hostname, connect_ip, payload.port)
     except TimeoutError:
         raise HTTPException(504, "Connection timed out while fetching certificate")
     except ssl.SSLError as exc:

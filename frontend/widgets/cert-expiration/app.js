@@ -18,6 +18,15 @@ function setText(id, text) {
   document.getElementById(id).textContent = text;
 }
 
+async function parseApiResponse(response) {
+  const raw = await response.text();
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {detail: raw || 'Unexpected response from server'};
+  }
+}
+
 function fmtDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value || 'N/A';
@@ -59,7 +68,7 @@ checkBtn.addEventListener('click', async () => {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({hostname, port}),
     });
-    const data = await response.json();
+    const data = await parseApiResponse(response);
     if (!response.ok) {
       throw new Error(data.detail || 'Certificate check failed');
     }

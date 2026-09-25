@@ -33,9 +33,18 @@ def _clean_target(value: str) -> str:
     return target
 
 
+def _is_public_ip(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip).is_global
+    except ValueError:
+        return False
+
+
 def _resolve_ip(target: str) -> tuple[str, str]:
     try:
         ip = str(ipaddress.ip_address(target))
+        if not _is_public_ip(ip):
+            raise HTTPException(400, "Only public IP or hostname targets are allowed")
         return target, ip
     except ValueError:
         pass
@@ -51,11 +60,12 @@ def _resolve_ip(target: str) -> tuple[str, str]:
                     candidates.append(candidate)
             except ValueError:
                 continue
-        if not candidates:
-            raise HTTPException(400, "Invalid hostname or public IP address")
+        public_candidates = [item for item in candidates if _is_public_ip(item)]
+        if not public_candidates:
+            raise HTTPException(400, "Only public IP or hostname targets are allowed")
 
-        ipv4 = next((item for item in candidates if ipaddress.ip_address(item).version == 4), None)
-        return target, ipv4 or candidates[0]
+        ipv4 = next((item for item in public_candidates if ipaddress.ip_address(item).version == 4), None)
+        return target, ipv4 or public_candidates[0]
     except socket.gaierror:
         pass
     raise HTTPException(400, "Invalid hostname or public IP address")

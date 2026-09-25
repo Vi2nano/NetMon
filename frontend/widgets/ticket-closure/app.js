@@ -14,6 +14,15 @@ function setError(message) {
   errorBox.classList.add('show');
 }
 
+async function parseApiResponse(response) {
+  const raw = await response.text();
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {detail: raw || 'Unexpected response from server'};
+  }
+}
+
 generateBtn.addEventListener('click', async () => {
   setError('');
   result.classList.remove('show');
@@ -32,7 +41,7 @@ generateBtn.addEventListener('click', async () => {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({notes}),
     });
-    const data = await response.json();
+    const data = await parseApiResponse(response);
     if (!response.ok) {
       throw new Error(data.detail || 'Failed to generate closure text');
     }

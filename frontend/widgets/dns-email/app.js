@@ -42,6 +42,15 @@ function renderBlacklist(rows) {
   return rows.map((row) => `${row.zone}: ${row.reason}`).join(' | ');
 }
 
+async function parseApiResponse(response) {
+  const raw = await response.text();
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {detail: raw || 'Unexpected response from server'};
+  }
+}
+
 lookupBtn.addEventListener('click', async () => {
   setError('');
   resultBox.classList.remove('show');
@@ -61,7 +70,7 @@ lookupBtn.addEventListener('click', async () => {
       body: JSON.stringify({target}),
     });
 
-    const data = await response.json();
+    const data = await parseApiResponse(response);
     if (!response.ok) {
       throw new Error(data.detail || 'Lookup failed');
     }
