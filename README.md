@@ -8,7 +8,7 @@ NetMon provides real-time latency, packet loss metrics, and instant alert handli
 
 ## ✨ Features
 
-- **Unified Widgets Homepage:** `GET /` now serves a dark-themed launcher dashboard with tiles for NetMon and supporting network operations widgets.
+- **Unified Widgets Homepage:** `GET /` now serves a dark-themed launcher dashboard with tiles for NetMon and supporting network operations widgets, including a live-updating NetMon health summary.
 - **Zero Bloat Monitoring:** Keep tabs on hostnames, raw IP addresses, public DNS targets (like `8.8.8.8` and `1.1.1.1`), or local gateway routing without dealing with complicated agent installations.
 - **Real-Time Data Streaming:** Leverages WebSockets to push live snapshots, latency statistics, and diagnostic metrics directly to your browser instantly—no manual refreshing required.
 - **Fail-Safe Target Validation:** When adding a new device, NetMon performs an isolated HTTP handshake checking for reachability, parsing clean hostnames/IPs automatically while ensuring that non-web assets (like pure ICMP nodes) are still safely registered.
