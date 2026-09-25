@@ -29,6 +29,8 @@ def _check_cert_sync(hostname: str, port: int) -> dict:
     with socket.create_connection((hostname, port), timeout=8.0) as sock:
         with context.wrap_socket(sock, server_hostname=hostname) as tls_sock:
             cert = tls_sock.getpeercert()
+    if not cert or "notBefore" not in cert or "notAfter" not in cert:
+        raise ValueError("Certificate did not include required validity fields")
 
     not_before = datetime.strptime(cert["notBefore"], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
     not_after = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
@@ -70,5 +72,7 @@ async def check_certificate(payload: CertCheckIn):
         raise HTTPException(502, f"TLS handshake failed: {exc}")
     except ConnectionRefusedError:
         raise HTTPException(502, "Connection refused by target host/port")
+    except ValueError as exc:
+        raise HTTPException(502, f"Certificate metadata is incomplete: {exc}")
     except OSError as exc:
         raise HTTPException(502, f"Certificate lookup failed: {exc}")

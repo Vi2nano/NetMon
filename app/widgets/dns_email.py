@@ -42,13 +42,20 @@ def _resolve_ip(target: str) -> tuple[str, str]:
 
     try:
         infos = socket.getaddrinfo(target, None, type=socket.SOCK_STREAM)
+        candidates: list[str] = []
         for info in infos:
-            candidate = info[4][0]
+            raw_candidate = info[4][0]
             try:
-                ip = str(ipaddress.ip_address(candidate))
-                return target, ip
+                candidate = str(ipaddress.ip_address(raw_candidate))
+                if candidate not in candidates:
+                    candidates.append(candidate)
             except ValueError:
                 continue
+        if not candidates:
+            raise HTTPException(400, "Invalid hostname or public IP address")
+
+        ipv4 = next((item for item in candidates if ipaddress.ip_address(item).version == 4), None)
+        return target, ipv4 or candidates[0]
     except socket.gaierror:
         pass
     raise HTTPException(400, "Invalid hostname or public IP address")

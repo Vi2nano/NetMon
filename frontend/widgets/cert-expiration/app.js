@@ -34,7 +34,10 @@ function statusBadge(status, days) {
     css = 'warn';
     label = 'Expiring Soon';
   }
-  return `<span class="badge ${css}">${label}${typeof days === 'number' ? ` (${days}d)` : ''}</span>`;
+  const badge = document.createElement('span');
+  badge.className = `badge ${css}`;
+  badge.textContent = `${label}${typeof days === 'number' ? ` (${days}d)` : ''}`;
+  return badge;
 }
 
 checkBtn.addEventListener('click', async () => {
@@ -66,7 +69,9 @@ checkBtn.addEventListener('click', async () => {
     setText('valid-from', fmtDate(data.valid_from));
     setText('valid-until', fmtDate(data.valid_until));
     setText('days', String(data.days_remaining));
-    document.getElementById('status').innerHTML = statusBadge(data.status, data.days_remaining);
+    const statusNode = document.getElementById('status');
+    statusNode.textContent = '';
+    statusNode.appendChild(statusBadge(data.status, data.days_remaining));
     resultBox.classList.add('show');
   } catch (error) {
     setError(error.message || 'Certificate check failed.');
