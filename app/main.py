@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .agent_relay import AgentRelayService
 from .alerts import WEBHOOK_PROVIDERS, AlertManager
 from .database import PRIORITIES, RULE_METRICS, RULE_OPERATORS, RULE_SCOPE_TYPES, Database
 from .export_import import ExportImport
@@ -74,6 +75,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 alert_manager = AlertManager(db, manager.broadcast)
 engine = MonitorEngine(db, alert_manager, manager.broadcast)
+agent_relay = AgentRelayService(db, engine)
 
 
 async def _pruning_loop():
@@ -89,6 +91,7 @@ async def _pruning_loop():
 async def lifespan(app: FastAPI):
     await db.connect()
     await engine.start()
+    await agent_relay.start()
     log.info("NetMon started — monitoring %d device(s)", len(engine.runtimes))
     for rt in engine.runtimes.values():
         log.info(
@@ -99,6 +102,7 @@ async def lifespan(app: FastAPI):
     prune_task = asyncio.create_task(_pruning_loop())
     yield
     prune_task.cancel()
+    await agent_relay.stop()
     await engine.stop()
     await db.close()
 
