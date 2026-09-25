@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DNS/Email Troubleshooting Widget</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/widgets/common.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <h1>DNS/Email Troubleshooting</h1>
+        <p class="subtitle">Enter a public IP or hostname to inspect routing identity and reputation signals.</p>
+      </div>
+      <a class="back-link" href="/">← Back to Dashboard</a>
+    </header>
+
+    <section class="panel">
+      <div class="form-row">
+        <div class="field">
+          <label for="target">Public IP or hostname</label>
+          <input id="target" type="text" placeholder="8.8.8.8 or mail.example.com">
+        </div>
+        <button id="lookup-btn" type="button">Run Lookup</button>
+      </div>
+      <p class="meta" style="margin:10px 0 0;">Uses <strong>ipinfo.io</strong> (no API key required for basic lookups). Free-tier limits apply; paid plans provide higher limits/detail.</p>
+      <div id="error" class="error"></div>
+
+      <div id="result" class="result">
+        <div class="result-grid">
+          <article class="result-card"><h3>Target</h3><p id="target-out"></p></article>
+          <article class="result-card"><h3>ISP</h3><p id="isp-out"></p></article>
+          <article class="result-card"><h3>ASN</h3><p id="asn-out"></p></article>
+          <article class="result-card"><h3>Geolocation</h3><p id="geo-out"></p></article>
+          <article class="result-card"><h3>Reverse DNS (PTR)</h3><p id="ptr-out"></p></article>
+          <article class="result-card"><h3>Blacklist Status</h3><p id="blacklist-out"></p></article>
+        </div>
+        <div class="links" id="links"></div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/widgets/dns-email/app.js"></script>
+</body>
+</html>

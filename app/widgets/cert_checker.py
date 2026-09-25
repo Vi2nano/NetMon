@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import socket
+import ssl
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+router = APIRouter(prefix="/api/widgets/cert-expiration", tags=["widgets"])
+
+
+class CertCheckIn(BaseModel):
+    hostname: str
+    port: int = Field(default=443, ge=1, le=65535)
+
+
+def _extract_name(parts: tuple[tuple[str, str], ...]) -> str:
+    for part in parts:
+        if part[0][0] == "commonName":
+            return part[0][1]
+    return "N/A"
+
+
+def _resolve_public_ip(hostname: str) -> str:
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise HTTPException(400, "Hostname could not be resolved")
+
+    candidates: list[str] = []
+    for info in infos:
+        raw = info[4][0]
+        try:
+            ip = str(ipaddress.ip_address(raw))
+            if ipaddress.ip_address(ip).is_global and ip not in candidates:
+                candidates.append(ip)
+        except Exception:
+            continue
+
+    if not candidates:
+        raise HTTPException(400, "Only public hostnames/IPs are allowed")
+
+    ipv4 = next((item for item in candidates if ipaddress.ip_address(item).version == 4), None)
+    return ipv4 or candidates[0]
+
+
+def _check_cert_sync(hostname: str, connect_ip: str, port: int) -> dict:
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    with socket.create_connection((connect_ip, port), timeout=8.0) as sock:
+        with context.wrap_socket(sock, server_hostname=hostname) as tls_sock:
+            cert = tls_sock.getpeercert()
+    if not cert or "notBefore" not in cert or "notAfter" not in cert:
+        raise ValueError("Certificate did not include required validity fields")
+
+    not_before = datetime.strptime(cert["notBefore"], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+    not_after = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    days_remaining = int((not_after - now).total_seconds() // 86400)
+
+    if days_remaining < 0:
+        status = "expired"
+    elif days_remaining < 30:
+        status = "expiring_soon"
+    else:
+        status = "ok"
+
+    return {
+        "hostname": hostname,
+        "resolved_ip": connect_ip,
+        "port": port,
+        "subject_cn": _extract_name(cert.get("subject", ())),
+        "issuer_cn": _extract_name(cert.get("issuer", ())),
+        "valid_from": not_before.isoformat(),
+        "valid_until": not_after.isoformat(),
+        "days_remaining": days_remaining,
+        "status": status,
+    }
+
+
+@router.post("/check")
+async def check_certificate(payload: CertCheckIn):
+    hostname = payload.hostname.strip()
+    if not hostname:
+        raise HTTPException(400, "Hostname is required")
+    connect_ip = _resolve_public_ip(hostname)
+
+    try:
+        return await asyncio.to_thread(_check_cert_sync, hostname, connect_ip, payload.port)
+    except TimeoutError:
+        raise HTTPException(504, "Connection timed out while fetching certificate")
+    except ssl.SSLError as exc:
+        raise HTTPException(502, f"TLS handshake failed: {exc}")
+    except ConnectionRefusedError:
+        raise HTTPException(502, "Connection refused by target host/port")
+    except ValueError as exc:
+        raise HTTPException(502, f"Certificate metadata is incomplete: {exc}")
+    except OSError as exc:
+        raise HTTPException(502, f"Certificate lookup failed: {exc}")

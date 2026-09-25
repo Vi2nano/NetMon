@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certificate Expiration Checker Widget</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/widgets/common.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <h1>Public Certificate Expiration Checker</h1>
+        <p class="subtitle">Check TLS certificate metadata and expiration status for a public hostname.</p>
+      </div>
+      <a class="back-link" href="/">← Back to Dashboard</a>
+    </header>
+
+    <section class="panel">
+      <div class="form-row">
+        <div class="field">
+          <label for="hostname">Hostname</label>
+          <input id="hostname" type="text" placeholder="example.com">
+        </div>
+        <div class="field" style="max-width:120px;">
+          <label for="port">Port</label>
+          <input id="port" type="number" min="1" max="65535" value="443">
+        </div>
+        <button id="check-btn" type="button">Check Certificate</button>
+      </div>
+      <div id="error" class="error"></div>
+
+      <div id="result" class="result">
+        <div class="result-grid">
+          <article class="result-card"><h3>Subject / CN</h3><p id="subject"></p></article>
+          <article class="result-card"><h3>Issuer</h3><p id="issuer"></p></article>
+          <article class="result-card"><h3>Valid From</h3><p id="valid-from"></p></article>
+          <article class="result-card"><h3>Valid Until</h3><p id="valid-until"></p></article>
+          <article class="result-card"><h3>Days Remaining</h3><p id="days"></p></article>
+          <article class="result-card"><h3>Status</h3><p id="status"></p></article>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/widgets/cert-expiration/app.js"></script>
+</body>
+</html>

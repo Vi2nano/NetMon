@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetMon Widgets Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/widgets/common.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <h1>Widgets Dashboard</h1>
+        <p class="subtitle">Launch NetMon and related troubleshooting utilities from one place.</p>
+      </div>
+    </header>
+
+    <section class="tile-grid">
+      <a class="tile" href="/widgets/netmon/">
+        <h2>NetMon</h2>
+        <p>Full monitoring dashboard (devices, alerts, rules, discovery, and live updates).</p>
+      </a>
+      <a class="tile" href="/widgets/dns-email/">
+        <h2>DNS/Email Troubleshooting</h2>
+        <p>Lookup ISP, ASN, geolocation, PTR data, and blacklist checks for a target.</p>
+      </a>
+      <a class="tile" href="/widgets/ticket-closure/">
+        <h2>Ticket Closure Generator</h2>
+        <p>Convert terse technical actions into polished, user-facing closure language.</p>
+      </a>
+      <a class="tile" href="/widgets/cert-expiration/">
+        <h2>Public Certificate Expiration Checker</h2>
+        <p>Inspect public TLS certificate identity, validity dates, and expiry status.</p>
+      </a>
+    </section>
+  </main>
+</body>
+</html>
