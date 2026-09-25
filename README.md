@@ -17,6 +17,7 @@ NetMon provides real-time latency, packet loss metrics, and instant alert handli
 - **DNS/Email Troubleshooting Widget:** Public IP/hostname lookup with ISP/ASN/geolocation enrichment, PTR checks, DNSBL checks, and outbound reference links.
 - **Ticket Closure Generator Widget:** Rule-based translation of terse remediation notes into polished customer-facing closure paragraphs with deterministic local logic.
 - **Public Certificate Expiration Widget:** Checks TLS metadata (subject/issuer), validity windows, days-to-expiry, and status badges (OK/expiring/expired).
+- **Bookmark Toolbox Widget:** Save browser-local user links plus shared organization/deployment URLs from the homepage flyout.
 
 ---
 
@@ -39,6 +40,7 @@ NetMon is structured cleanly to ensure low resource overhead, making it perfect 
     ├── index.html                 # NetMon dashboard widget (`/widgets/netmon/`)
     └── widgets/                   # Shared widget styles + individual widget pages
         ├── common.css
+        ├── bookmark-toolbox/
         ├── dns-email/
         ├── ticket-closure/
         └── cert-expiration/
@@ -149,6 +151,7 @@ NetMon exposes a fully documented REST API alongside its real-time WebSocket cha
 * **`POST /api/devices`**: Safely register a new endpoint with custom urgency parameters (`high`, `normal`, `low`), max latency thresholds, and target drop-rate boundaries.
 * **`GET /api/alerts`**: Query active or past network outages and threshold breaches.
 * **`WS /ws`**: Establish a bidirectional WebSocket session for zero-latency metric broadcasts.
+* **`GET/POST/DELETE /api/widgets/bookmark-toolbox/shared`**: Manage shared organization/deployment links for the bookmark toolbox widget.
 * **`POST /api/widgets/dns-email/lookup`**: DNS/email troubleshooting lookup for public IP/hostname.
 * **`POST /api/widgets/ticket-closure/generate`**: Generate polished ticket closure paragraphs from technical action notes.
 * **`POST /api/widgets/cert-expiration/check`**: Retrieve public certificate metadata and expiry status.
