@@ -8,11 +8,15 @@ NetMon provides real-time latency, packet loss metrics, and instant alert handli
 
 ## ✨ Features
 
+- **Unified Widgets Homepage:** `GET /` now serves a dark-themed launcher dashboard with tiles for NetMon and supporting network operations widgets.
 - **Zero Bloat Monitoring:** Keep tabs on hostnames, raw IP addresses, public DNS targets (like `8.8.8.8` and `1.1.1.1`), or local gateway routing without dealing with complicated agent installations.
 - **Real-Time Data Streaming:** Leverages WebSockets to push live snapshots, latency statistics, and diagnostic metrics directly to your browser instantly—no manual refreshing required.
 - **Fail-Safe Target Validation:** When adding a new device, NetMon performs an isolated HTTP handshake checking for reachability, parsing clean hostnames/IPs automatically while ensuring that non-web assets (like pure ICMP nodes) are still safely registered.
 - **Self-Healing Database Management:** Auto-seeds default deletable testing endpoints on its first run if the environment is empty, and runs an asynchronous background pruning routine every 6 hours to clear historical logs older than 30 days.
 - **Custom Threshold Alerts & Webhooks:** Configurable latency thresholds (ms) and packet loss parameters (%) per device to dispatch system logs and trigger external communication streams.
+- **DNS/Email Troubleshooting Widget:** Public IP/hostname lookup with ISP/ASN/geolocation enrichment, PTR checks, DNSBL checks, and outbound reference links.
+- **Ticket Closure Generator Widget:** Rule-based translation of terse remediation notes into polished customer-facing closure paragraphs with deterministic local logic.
+- **Public Certificate Expiration Widget:** Checks TLS metadata (subject/issuer), validity windows, days-to-expiry, and status badges (OK/expiring/expired).
 
 ---
 
@@ -21,13 +25,23 @@ NetMon provides real-time latency, packet loss metrics, and instant alert handli
 NetMon is structured cleanly to ensure low resource overhead, making it perfect to run continuously in the background of your workspace, a local server, or a small VM:
 
 ```text
-├── main.py            # FastAPI main entry point, schema models, and REST/WS routing
-├── alerts.py          # Alert evaluation engine and webhook dispatcher
-├── database.py        # SQLite management layer and historical log persistence
-├── monitor.py         # Asynchronous monitoring engine handling polling loops
-└── frontend/          # Single-page UI asset directory
-    ├── index.html     # Real-time monitoring control panel
-    └── static/        # Modular dashboard styling and script assets
+├── app/
+│   ├── main.py                    # FastAPI entry point and route mounting
+│   ├── alerts.py                  # Alert evaluation engine and webhook dispatcher
+│   ├── database.py                # SQLite management layer and historical log persistence
+│   ├── monitor.py                 # Asynchronous monitoring engine handling polling loops
+│   └── widgets/                   # Widget API routers
+│       ├── dns_email.py
+│       ├── ticket_closure.py
+│       └── cert_checker.py
+└── frontend/
+    ├── home.html                  # Widget launcher homepage (`/`)
+    ├── index.html                 # NetMon dashboard widget (`/widgets/netmon/`)
+    └── widgets/                   # Shared widget styles + individual widget pages
+        ├── common.css
+        ├── dns-email/
+        ├── ticket-closure/
+        └── cert-expiration/
 ```
 
 ---
@@ -66,8 +80,9 @@ docker run -d \
     ghcr.io/vi2nano/netmon:latest
 ```
 
-Open `http://localhost:8000` in your browser. The image includes `ping` and
-`traceroute`, runs as a non-root user, and stores the database in `/app/data`.
+Open `http://localhost:8000` in your browser for the widget homepage, then launch
+NetMon from the **NetMon** tile (`/widgets/netmon/`). The image includes `ping`
+and `traceroute`, runs as a non-root user, and stores the database in `/app/data`.
 
 
 #### Build locally from the source
@@ -97,8 +112,9 @@ docker run -d \
     netmon:local
 ```
 
-Open `http://localhost:8000`. The image includes `ping` and `traceroute`,
-runs as a non-root user, and stores the database in `/app/data`.
+Open `http://localhost:8000` for the widget homepage. The NetMon monitor UI now
+lives at `/widgets/netmon/`. The image includes `ping` and `traceroute`, runs as
+a non-root user, and stores the database in `/app/data`.
 
 On Linux, host networking can help with local-LAN discovery and diagnostics:
 
@@ -111,8 +127,8 @@ docker run -d \
     netmon:local
 ```
 
-With host networking, access the dashboard at `http://localhost:8000` and do
-not also publish `-p 8000:8000`.
+With host networking, access the homepage at `http://localhost:8000` and do not
+also publish `-p 8000:8000`.
 
 > **Traceroute note (Docker Desktop on Windows):** Docker Desktop routes Linux
 > containers through a Hyper-V/WSL2 NAT layer, which can suppress intermediate
@@ -133,6 +149,9 @@ NetMon exposes a fully documented REST API alongside its real-time WebSocket cha
 * **`POST /api/devices`**: Safely register a new endpoint with custom urgency parameters (`high`, `normal`, `low`), max latency thresholds, and target drop-rate boundaries.
 * **`GET /api/alerts`**: Query active or past network outages and threshold breaches.
 * **`WS /ws`**: Establish a bidirectional WebSocket session for zero-latency metric broadcasts.
+* **`POST /api/widgets/dns-email/lookup`**: DNS/email troubleshooting lookup for public IP/hostname.
+* **`POST /api/widgets/ticket-closure/generate`**: Generate polished ticket closure paragraphs from technical action notes.
+* **`POST /api/widgets/cert-expiration/check`**: Retrieve public certificate metadata and expiry status.
 
 ---
 
@@ -157,5 +176,3 @@ Distributed under the **GNU GPLv3 License**. See the `LICENSE` file in the root 
 
 ## Example Alerts
 <img width="2445" height="822" alt="image" src="https://github.com/user-attachments/assets/5452ce65-e3d4-42d6-955f-60abe42c8c41" />
-
-

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ticket Closure Generator Widget</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/widgets/common.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <h1>Ticket Closure Generator</h1>
+        <p class="subtitle">Enter technical remediation notes (one per line) and generate user-friendly closure language.</p>
+      </div>
+      <a class="back-link" href="/">← Back to Dashboard</a>
+    </header>
+
+    <section class="panel">
+      <div class="field">
+        <label for="notes">Technical notes/actions taken</label>
+        <textarea id="notes" placeholder="Replaced patch cable&#10;Reset interface&#10;Confirmed connectivity"></textarea>
+      </div>
+      <div class="form-row" style="margin-top:10px;">
+        <button id="generate-btn" type="button">Generate Closure</button>
+      </div>
+      <div id="error" class="error"></div>
+
+      <div id="result" class="result">
+        <article class="result-card">
+          <h3>Generated Closure Paragraph</h3>
+          <pre id="paragraph"></pre>
+        </article>
+      </div>
+    </section>
+  </main>
+  <script src="/static/widgets/ticket-closure/app.js"></script>
+</body>
+</html>

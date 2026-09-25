@@ -19,6 +19,9 @@ from .database import PRIORITIES, RULE_METRICS, RULE_OPERATORS, RULE_SCOPE_TYPES
 from .export_import import ExportImport
 from .monitor import MonitorEngine
 from .ping_utils import discover_path_mtu, ping_once, run_traceroute, tcp_port_check
+from .widgets.cert_checker import router as cert_checker_router
+from .widgets.dns_email import router as dns_email_router
+from .widgets.ticket_closure import router as ticket_closure_router
 
 logging.basicConfig(
     level=os.environ.get("NETMON_LOG_LEVEL", "INFO"),
@@ -29,6 +32,7 @@ log = logging.getLogger("netmon.main")
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = os.environ.get("NETMON_DB_PATH", str(BASE_DIR / "data" / "netmon.db"))
 FRONTEND_DIR = BASE_DIR / "frontend"
+WIDGETS_DIR = FRONTEND_DIR / "widgets"
 
 db = Database(DB_PATH)
 
@@ -97,6 +101,9 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 app = FastAPI(title="NetMon", lifespan=lifespan)
+app.include_router(dns_email_router)
+app.include_router(ticket_closure_router)
+app.include_router(cert_checker_router)
 
 # ---------------------------------------------------------------- schemas
 
@@ -480,4 +487,28 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.get("/")
 async def index():
+    return FileResponse(str(FRONTEND_DIR / "home.html"))
+
+
+@app.get("/widgets/netmon")
+@app.get("/widgets/netmon/")
+async def netmon_widget():
     return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+@app.get("/widgets/dns-email")
+@app.get("/widgets/dns-email/")
+async def dns_email_widget():
+    return FileResponse(str(WIDGETS_DIR / "dns-email" / "index.html"))
+
+
+@app.get("/widgets/ticket-closure")
+@app.get("/widgets/ticket-closure/")
+async def ticket_closure_widget():
+    return FileResponse(str(WIDGETS_DIR / "ticket-closure" / "index.html"))
+
+
+@app.get("/widgets/cert-expiration")
+@app.get("/widgets/cert-expiration/")
+async def cert_expiration_widget():
+    return FileResponse(str(WIDGETS_DIR / "cert-expiration" / "index.html"))
